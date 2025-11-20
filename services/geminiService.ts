@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { VocabularyWord, Language, NewsArticle } from "../types";
 
@@ -377,7 +376,8 @@ export const getSystemTTSUrl = (text: string, lang: Language): string => {
     else if (lang === 'zh') tl = 'zh-CN';
     else if (lang === 'es') tl = 'es';
     
-    return `https://translate.google.com/translate_tts?ie=UTF-8&client=gtx&tl=${tl}&q=${encodeURIComponent(text)}`;
+    // Use googleapis.com instead of google.com to reduce blocking probability
+    return `https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=${tl}&q=${encodeURIComponent(text)}`;
 }
 
 const addWavHeader = (pcmData: Uint8Array, sampleRate: number = 24000): ArrayBuffer => {

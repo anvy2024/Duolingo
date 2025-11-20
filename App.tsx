@@ -127,15 +127,16 @@ export default function App() {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
                   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
+    // Use Google TTS on iOS because native iOS voices are often robotic/poor for learners
     if (isIOS) {
-        // Use Google Translate TTS (Unofficial) for better quality on iOS
         let tl = 'fr';
         if (selectedLang === 'en') tl = 'en';
         else if (selectedLang === 'zh') tl = 'zh-CN';
         else if (selectedLang === 'es') tl = 'es';
 
-        // 'gtx' client is generally more permissive than 'tw-ob'
-        const url = `https://translate.google.com/translate_tts?ie=UTF-8&client=gtx&q=${encodeURIComponent(text)}&tl=${tl}`;
+        // Use googleapis.com (more reliable) with client=gtx
+        // IMPORTANT: index.html must have <meta name="referrer" content="no-referrer">
+        const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&q=${encodeURIComponent(text)}&tl=${tl}`;
         
         const audio = new Audio(url);
         audio.playbackRate = playbackSpeed;
