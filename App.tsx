@@ -61,7 +61,6 @@ export default function App() {
     window.speechSynthesis.onvoiceschanged = loadVoices;
   }, []);
 
-  // Audio Logic
   const playAudioSource = (url: string, speed: number) => {
       // Stop browser speech if running
       window.speechSynthesis.cancel();
@@ -84,36 +83,13 @@ export default function App() {
     });
   };
 
-  // UPDATED: Intelligent Speak Fast - Uses Google Translate TTS for iOS/Mobile
-  const speakFast = useCallback((text: string) => {
-    try {
-        if (!selectedLang) return;
-        
-        // Stop any playing audio
-        if (currentAudioRef.current) {
-            currentAudioRef.current.pause();
-            currentAudioRef.current.currentTime = 0;
-        }
+  // --- SPEECH LOGIC ---
+
+  // 1. Native Browser Speech (Fallback & Desktop)
+  const speakNative = useCallback((text: string) => {
         window.speechSynthesis.cancel();
-
-        // Detect iOS/Mobile (Rough check)
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        
-        // If iOS, use Google Translate Hack for better quality than native
-        if (isIOS) {
-            let tl = 'fr';
-            if (selectedLang === 'en') tl = 'en';
-            else if (selectedLang === 'zh') tl = 'zh-CN';
-            else if (selectedLang === 'es') tl = 'es';
-            
-            const url = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q=${encodeURIComponent(text)}&tl=${tl}&total=1&idx=0&textlen=${text.length}`;
-            playAudioSource(url, playbackSpeed);
-            return;
-        }
-
-        // FOR DESKTOP (Chrome/Edge have good native voices)
         const utterance = new SpeechSynthesisUtterance(text);
+        
         if (selectedLang === 'fr') utterance.lang = 'fr-FR';
         else if (selectedLang === 'en') utterance.lang = 'en-US';
         else if (selectedLang === 'zh') utterance.lang = 'zh-CN';
@@ -121,12 +97,12 @@ export default function App() {
         
         utterance.rate = playbackSpeed; 
         
+        // Attempt to find a better native voice
         const voices = window.speechSynthesis.getVoices();
         const langPrefix = selectedLang === 'zh' ? 'zh' : selectedLang;
-        // Try to get a Google voice or Premium voice if available
         const preferredVoice = voices.find(voice => 
             voice.lang.startsWith(langPrefix) && 
-            (voice.name.includes('Google') || voice.name.includes('Premium') || !voice.localService)
+            (voice.name.includes('Google') || voice.name.includes('Premium') || voice.name.includes('Enhanced') || !voice.localService)
         );
         
         if (preferredVoice) {
@@ -134,16 +110,61 @@ export default function App() {
         }
 
         window.speechSynthesis.speak(utterance);
+  }, [selectedLang, playbackSpeed]);
 
-    } catch (err) {
-        console.error("TTS error", err);
+  // 2. Smart Speak Fast (Google TTS for iOS + Fallback)
+  const speakFast = useCallback((text: string) => {
+    if (!selectedLang) return;
+
+    // Stop current audio
+    if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current.currentTime = 0;
     }
-  }, [playbackSpeed, selectedLang]);
+    window.speechSynthesis.cancel();
+
+    // Detect iOS
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    if (isIOS) {
+        // Use Google Translate TTS (Unofficial) for better quality on iOS
+        let tl = 'fr';
+        if (selectedLang === 'en') tl = 'en';
+        else if (selectedLang === 'zh') tl = 'zh-CN';
+        else if (selectedLang === 'es') tl = 'es';
+
+        // 'gtx' client is generally more permissive than 'tw-ob'
+        const url = `https://translate.google.com/translate_tts?ie=UTF-8&client=gtx&q=${encodeURIComponent(text)}&tl=${tl}`;
+        
+        const audio = new Audio(url);
+        audio.playbackRate = playbackSpeed;
+        
+        // CRITICAL: Fallback to native if Google TTS fails (Network error, 403, etc.)
+        const handleFallback = () => {
+            console.warn("Google TTS failed/blocked, falling back to native speech.");
+            speakNative(text);
+        };
+
+        audio.onerror = handleFallback;
+
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(e => {
+                console.warn("Audio play promise rejected", e);
+                handleFallback();
+            });
+        }
+        currentAudioRef.current = audio;
+    } else {
+        // On Desktop/Android, Chrome's native TTS is usually excellent and instant
+        speakNative(text);
+    }
+  }, [selectedLang, playbackSpeed, speakNative]);
 
   const speakAI = useCallback(async (text: string) => {
     if (aiAudioLoading) return; 
     
-    // Stop other audio sources
     window.speechSynthesis.cancel();
     if (currentAudioRef.current) {
         currentAudioRef.current.pause();
@@ -156,11 +177,12 @@ export default function App() {
         playAudioSource(url, playbackSpeed);
     } catch (err) {
         console.error("AI Audio playback error", err);
-        alert("Error loading AI voice. Please try again.");
+        // Fallback to fast speak if AI fails
+        speakFast(text);
     } finally {
         setAiAudioLoading(false);
     }
-  }, [aiAudioLoading, playbackSpeed]);
+  }, [aiAudioLoading, playbackSpeed, speakFast]);
 
   // Main Logic Functions
   const handleStartNew = async (topic: GenerationTopic = 'general') => {

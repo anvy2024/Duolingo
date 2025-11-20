@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RotateCw, GraduationCap, Sparkles, Library, Zap, AlertCircle, Heart, CheckCircle, Settings, ExternalLink, Newspaper, Book, Maximize, Minimize } from 'lucide-react';
+import { RotateCw, GraduationCap, Sparkles, Library, Zap, AlertCircle, Heart, CheckCircle, Settings, ExternalLink, Newspaper, Book, Maximize, Minimize, Share } from 'lucide-react';
 import { GenerationTopic } from '../services/geminiService';
 import { Language } from '../types';
 import { TRANSLATIONS } from '../constants/translations';
@@ -25,6 +25,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 }) => {
   const t = TRANSLATIONS[currentLang];
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(true);
   
   let langName = 'Français';
   let langColor = 'bg-blue-500';
@@ -37,6 +39,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
           setIsFullscreen(!!document.fullscreenElement);
       };
       document.addEventListener('fullscreenchange', handleFsChange);
+
+      // Check iOS and Standalone
+      const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      setIsIOS(ios);
+      
+      // Check if running in standalone mode (PWA)
+      const isInStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+      setIsStandalone(!!isInStandalone);
+
       return () => document.removeEventListener('fullscreenchange', handleFsChange);
   }, []);
 
@@ -44,7 +55,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
       if (!document.fullscreenElement) {
           document.documentElement.requestFullscreen().catch((e) => {
               console.log(e);
-              // Fallback for older Safari/iOS if needed, though mostly handled by meta tags for PWA
           });
       } else {
           if (document.exitFullscreen) {
@@ -89,6 +99,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         <div className="flex flex-col flex-1 p-5 space-y-8 max-w-md mx-auto w-full pb-12">
             
+            {/* iOS INSTALL TIP (Only show if on iOS and NOT in standalone mode) */}
+            {isIOS && !isStandalone && (
+                <div className="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-4 animate-in fade-in slide-in-from-top-4">
+                    <div className="flex items-start gap-3">
+                        <div className="bg-indigo-100 p-2 rounded-xl text-indigo-500">
+                            <Share className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h3 className="font-extrabold text-slate-700 text-sm mb-1">Cài đặt App Fullscreen</h3>
+                            <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                                Để có icon đẹp & chế độ toàn màn hình trên iPhone:
+                                <br/>
+                                1. Bấm nút <strong>Chia sẻ (Share)</strong> phía dưới.
+                                <br/>
+                                2. Chọn <strong>"Thêm vào MH chính" (Add to Home Screen)</strong>.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Hero Stats Card */}
             <div className="w-full space-y-4">
                 <div className="grid grid-cols-2 gap-4">
