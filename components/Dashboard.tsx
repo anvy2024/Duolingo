@@ -1,6 +1,6 @@
 
-import React from 'react';
-import { RotateCw, GraduationCap, Sparkles, Library, Zap, AlertCircle, Heart, CheckCircle, Settings, ExternalLink, Newspaper, Book } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { RotateCw, GraduationCap, Sparkles, Library, Zap, AlertCircle, Heart, CheckCircle, Settings, ExternalLink, Newspaper, Book, Maximize, Minimize } from 'lucide-react';
 import { GenerationTopic } from '../services/geminiService';
 import { Language } from '../types';
 import { TRANSLATIONS } from '../constants/translations';
@@ -25,12 +25,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
     onStartNew, onStartReview, onStartFavorites, onStartMastered, onViewList, onOpenSettings, onOpenNews, onSwitchLang 
 }) => {
   const t = TRANSLATIONS[currentLang];
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   let langName = 'Français';
   let langColor = 'bg-blue-500';
   if (currentLang === 'en') { langName = 'English'; langColor = 'bg-blue-600'; }
   else if (currentLang === 'zh') { langName = '中文'; langColor = 'bg-red-500'; }
   else if (currentLang === 'es') { langName = 'Español'; langColor = 'bg-yellow-500'; }
+
+  useEffect(() => {
+      const handleFsChange = () => {
+          setIsFullscreen(!!document.fullscreenElement);
+      };
+      document.addEventListener('fullscreenchange', handleFsChange);
+      return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  const toggleFullScreen = () => {
+      if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch((e) => {
+              console.log(e);
+              // Fallback for older Safari/iOS if needed, though mostly handled by meta tags for PWA
+          });
+      } else {
+          if (document.exitFullscreen) {
+              document.exitFullscreen();
+          }
+      }
+  };
 
   return (
     <div className="flex flex-col h-full bg-gray-100 overflow-y-auto custom-scrollbar">
@@ -47,12 +69,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <span className="text-xs font-bold text-slate-400 uppercase">{t.changeLang}</span>
                 </div>
              </div>
-            <button 
-                onClick={onOpenSettings}
-                className="p-2 text-slate-400 hover:bg-slate-200 hover:text-slate-600 rounded-xl transition-colors"
-            >
-                <Settings className="w-6 h-6" />
-            </button>
+             
+            <div className="flex items-center gap-2">
+                <button 
+                    onClick={toggleFullScreen}
+                    className="p-2 text-slate-400 hover:bg-slate-200 hover:text-slate-600 rounded-xl transition-colors hidden sm:block" 
+                    title="Full Screen"
+                >
+                    {isFullscreen ? <Minimize className="w-6 h-6" /> : <Maximize className="w-6 h-6" />}
+                </button>
+
+                <button 
+                    onClick={onOpenSettings}
+                    className="p-2 text-slate-400 hover:bg-slate-200 hover:text-slate-600 rounded-xl transition-colors"
+                >
+                    <Settings className="w-6 h-6" />
+                </button>
+            </div>
         </div>
 
         <div className="flex flex-col flex-1 p-5 space-y-8 max-w-md mx-auto w-full pb-12">
