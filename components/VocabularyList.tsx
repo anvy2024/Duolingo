@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { VocabularyWord, Language } from '../types';
-import { Zap, Sparkles, Search, ArrowLeft, Trash2, X, Heart, CheckCircle, Plus, Save, Loader2, Radio, Gamepad2, Play, HelpCircle, Headphones, Grid, Volume2 } from 'lucide-react';
+import { Zap, Sparkles, Search, ArrowLeft, Trash2, X, Heart, CheckCircle, Plus, Save, Loader2, Radio, Gamepad2, Play, HelpCircle, Headphones, Grid, Volume2, Pause, Square, Clock, Shuffle, Filter } from 'lucide-react';
 import { Flashcard } from './Flashcard';
 import { generateSingleWordDetails } from '../services/geminiService';
 import { TRANSLATIONS } from '../constants/translations';
@@ -22,6 +22,7 @@ interface VocabularyListProps {
 }
 
 type ViewMode = 'LIST' | 'GAME_MENU' | 'GAME_QUIZ' | 'GAME_AUDIO' | 'GAME_MATCH';
+type FilterType = 'ALL' | 'FAV' | 'MASTERED' | 'VERBS';
 
 export const VocabularyList: React.FC<VocabularyListProps> = ({ 
     words, currentLang, onBack, speakFast, speakAI, aiLoading, onDelete, 
@@ -32,9 +33,22 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWord, setSelectedWord] = useState<VocabularyWord | null>(null);
   
+  // Filter State
+  const [filterType, setFilterType] = useState<FilterType>('ALL');
+  
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   
+  // Auto Play State
+  const [isAutoPlaying, setIsAutoPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [playQueue, setPlayQueue] = useState<VocabularyWord[]>([]);
+  const [currentPlayIndex, setCurrentPlayIndex] = useState(0);
+  const [playDelay, setPlayDelay] = useState(2000); // 2000ms = 2s default
+  const [showSettings, setShowSettings] = useState(false);
+  const playTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
+
   // Form State
   const [newTarget, setNewTarget] = useState('');
   const [newVietnamese, setNewVietnamese] = useState('');
@@ -56,10 +70,124 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   const [matchedPairs, setMatchedPairs] = useState<string[]>([]);
   const [flippedCards, setFlippedCards] = useState<{id: string, type: 'target' | 'viet'}[]>([]);
 
-  const filteredWords = words.filter(word => 
-    word.target.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    word.vietnamese.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter Logic
+  const filteredWords = words.filter(word => {
+    const matchesSearch = word.target.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          word.vietnamese.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (!matchesSearch) return false;
+
+    if (filterType === 'FAV') return word.isFavorite;
+    if (filterType === 'MASTERED') return word.mastered;
+    if (filterType === 'VERBS') return word.category === 'common-verbs' || word.category === 'irregular-verbs';
+    
+    return true;
+  });
+
+  // --- AUTO PLAY LOGIC ---
+  const startAutoPlay = () => {
+      if (filteredWords.length === 0) return;
+      
+      // Shuffle for "random" effect as requested
+      const shuffled = [...filteredWords].sort(() => 0.5 - Math.random());
+      setPlayQueue(shuffled);
+      setCurrentPlayIndex(0);
+      setIsAutoPlaying(true);
+      setIsPaused(false);
+      setShowSettings(false);
+  };
+
+  const stopAutoPlay = () => {
+      setIsAutoPlaying(false);
+      setIsPaused(false);
+      setPlayQueue([]);
+      setCurrentPlayIndex(0);
+      window.speechSynthesis.cancel();
+      if (playTimeoutRef.current) clearTimeout(playTimeoutRef.current);
+  };
+
+  const togglePause = () => {
+      if (isPaused) {
+          setIsPaused(false);
+          // Resume simply by triggering the effect or letting it continue
+          // If synth was mid-speech, cancel and restart current word might be safer
+          window.speechSynthesis.cancel();
+          // Effect will re-trigger if we don't change index, but we need to make sure 
+          // it plays the current one.
+          // Actually, simpler is to just toggle state. 
+      } else {
+          setIsPaused(true);
+          window.speechSynthesis.cancel();
+          if (playTimeoutRef.current) clearTimeout(playTimeoutRef.current);
+      }
+  };
+
+  // Auto Play Effect Loop
+  useEffect(() => {
+    if (!isAutoPlaying || isPaused) return;
+
+    if (currentPlayIndex >= playQueue.length) {
+        stopAutoPlay();
+        return;
+    }
+
+    const word = playQueue[currentPlayIndex];
+    
+    // Scroll to word
+    const el = document.getElementById(`word-card-${word.id}`);
+    if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // Speak Logic (Local Utterance to handle onEnd)
+    const speakCurrent = () => {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(word.target);
+        
+        // Lang Config
+        if (currentLang === 'fr') utterance.lang = 'fr-FR';
+        else if (currentLang === 'en') utterance.lang = 'en-US';
+        else if (currentLang === 'zh') utterance.lang = 'zh-CN';
+        else if (currentLang === 'es') utterance.lang = 'es-ES';
+
+        utterance.rate = playbackSpeed;
+
+        // Try to pick best voice (copy from App.tsx logic)
+        const voices = window.speechSynthesis.getVoices();
+        const langPrefix = currentLang === 'zh' ? 'zh' : currentLang;
+        const preferredVoice = voices.find(voice => 
+            voice.lang.startsWith(langPrefix) && 
+            (voice.name.includes('Google') || voice.name.includes('Premium') || !voice.localService)
+        );
+        if (preferredVoice) utterance.voice = preferredVoice;
+
+        utterance.onend = () => {
+            playTimeoutRef.current = setTimeout(() => {
+                setCurrentPlayIndex(prev => prev + 1);
+            }, playDelay);
+        };
+        
+        utterance.onerror = () => {
+             // If error, skip after delay
+             playTimeoutRef.current = setTimeout(() => {
+                setCurrentPlayIndex(prev => prev + 1);
+            }, 1000);
+        };
+
+        synthRef.current = utterance;
+        window.speechSynthesis.speak(utterance);
+    };
+
+    // Small delay before speaking to allow scroll to finish visually
+    const startDelay = setTimeout(speakCurrent, 300);
+
+    return () => {
+        clearTimeout(startDelay);
+        if (playTimeoutRef.current) clearTimeout(playTimeoutRef.current);
+        window.speechSynthesis.cancel();
+    };
+  }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue]); // Removed playDelay/playbackSpeed from dependency to avoid restart mid-word if changed
+
 
   // --- GAME LOGIC ---
   const startGame = (mode: ViewMode) => {
@@ -265,6 +393,8 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   if (currentLang === 'zh') placeholder = "Ex: Māo (猫)";
   if (currentLang === 'es') placeholder = "Ex: Gato";
 
+  const currentPlayingId = (isAutoPlaying && playQueue[currentPlayIndex]) ? playQueue[currentPlayIndex].id : null;
+
   return (
     <div className="flex flex-col h-full max-w-2xl mx-auto w-full bg-gray-100 relative">
       {/* Header */}
@@ -283,39 +413,80 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
             
             {viewMode === 'LIST' && (
                 <div className="flex items-center gap-2">
-                    <button 
-                        onClick={() => setViewMode('GAME_MENU')}
-                        className="flex items-center justify-center p-2 bg-orange-500 text-white rounded-xl border-orange-600 border-b-4 active:border-b-0 active:translate-y-1 transition-all animate-pulse"
-                        title={t.games}
-                    >
-                        <Gamepad2 className="w-6 h-6" />
-                    </button>
-                    <button 
-                        onClick={() => setIsAddModalOpen(true)}
-                        className="flex items-center justify-center p-2 bg-green-500 text-white rounded-xl border-green-600 border-b-4 active:border-b-0 active:translate-y-1 transition-all"
-                    >
-                        <Plus className="w-6 h-6" />
-                    </button>
+                    {!isAutoPlaying && (
+                        <>
+                            <button 
+                                onClick={startAutoPlay}
+                                className="flex items-center justify-center p-2 bg-indigo-500 text-white rounded-xl border-indigo-600 border-b-4 active:border-b-0 active:translate-y-1 transition-all"
+                                title={t.autoPlay}
+                            >
+                                <Play className="w-6 h-6" />
+                            </button>
+                            <button 
+                                onClick={() => setViewMode('GAME_MENU')}
+                                className="flex items-center justify-center p-2 bg-orange-500 text-white rounded-xl border-orange-600 border-b-4 active:border-b-0 active:translate-y-1 transition-all"
+                                title={t.games}
+                            >
+                                <Gamepad2 className="w-6 h-6" />
+                            </button>
+                            <button 
+                                onClick={() => setIsAddModalOpen(true)}
+                                className="flex items-center justify-center p-2 bg-green-500 text-white rounded-xl border-green-600 border-b-4 active:border-b-0 active:translate-y-1 transition-all"
+                            >
+                                <Plus className="w-6 h-6" />
+                            </button>
+                        </>
+                    )}
                 </div>
             )}
         </div>
         
-        {viewMode === 'LIST' && (
-            <div className="relative">
-                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
-                <input 
-                    type="text" 
-                    placeholder={t.search + "..."}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl focus:border-sky-500 outline-none transition-all font-bold placeholder:text-slate-400"
-                />
+        {viewMode === 'LIST' && !isAutoPlaying && (
+            <div className="space-y-2">
+                <div className="relative">
+                    <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
+                    <input 
+                        type="text" 
+                        placeholder={t.search + "..."}
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl focus:border-sky-500 outline-none transition-all font-bold placeholder:text-slate-400"
+                    />
+                </div>
+                
+                {/* Filters */}
+                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                    <button 
+                        onClick={() => setFilterType('ALL')}
+                        className={`px-4 py-2 rounded-xl font-bold text-xs uppercase whitespace-nowrap border-2 ${filterType === 'ALL' ? 'bg-slate-700 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}
+                    >
+                        {t.filterAll}
+                    </button>
+                    <button 
+                        onClick={() => setFilterType('FAV')}
+                        className={`px-4 py-2 rounded-xl font-bold text-xs uppercase whitespace-nowrap border-2 ${filterType === 'FAV' ? 'bg-rose-500 text-white border-rose-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                    >
+                        <Heart className="w-3 h-3 inline mr-1" /> {t.filterFav}
+                    </button>
+                    <button 
+                        onClick={() => setFilterType('MASTERED')}
+                        className={`px-4 py-2 rounded-xl font-bold text-xs uppercase whitespace-nowrap border-2 ${filterType === 'MASTERED' ? 'bg-green-500 text-white border-green-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                    >
+                        <CheckCircle className="w-3 h-3 inline mr-1" /> {t.filterMastered}
+                    </button>
+                    <button 
+                        onClick={() => setFilterType('VERBS')}
+                        className={`px-4 py-2 rounded-xl font-bold text-xs uppercase whitespace-nowrap border-2 ${filterType === 'VERBS' ? 'bg-sky-500 text-white border-sky-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                    >
+                        {t.filterVerbs}
+                    </button>
+                </div>
             </div>
         )}
       </div>
 
       {/* CONTENT AREA */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-24 custom-scrollbar">
+      <div className={`flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar ${isAutoPlaying ? 'pb-48' : 'pb-24'}`}>
         
         {/* 1. LIST VIEW */}
         {viewMode === 'LIST' && (
@@ -326,39 +497,56 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                         <p className="font-bold text-lg">{t.notFound}</p>
                     </div>
                 ) : (
-                    filteredWords.map((word) => (
-                        <div 
-                            key={word.id} 
-                            onClick={() => setSelectedWord(word)}
-                            className="bg-white rounded-2xl p-4 border-2 border-slate-200 border-b-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 active:border-b-2 active:translate-y-[2px] transition-all group"
-                        >
-                            <div className="flex-1 min-w-0 mr-2">
-                                <h3 className="font-black text-lg text-slate-700 truncate group-hover:text-sky-500 transition-colors">{word.target}</h3>
-                                <p className="text-slate-500 font-medium text-sm truncate">{word.vietnamese}</p>
-                            </div>
-                            
-                            <div className="flex items-center gap-2 shrink-0">
-                                <button 
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        speakFast(word.target);
-                                    }}
-                                    className="p-2 rounded-xl text-slate-400 bg-slate-100 border border-slate-200 hover:text-sky-500 hover:border-sky-300 transition-colors"
-                                >
-                                    <Zap className="w-4 h-4" />
-                                </button>
+                    filteredWords.map((word) => {
+                        const isPlayingThis = word.id === currentPlayingId;
+                        return (
+                            <div 
+                                id={`word-card-${word.id}`}
+                                key={word.id} 
+                                onClick={() => !isAutoPlaying && setSelectedWord(word)}
+                                className={`rounded-2xl p-4 border-2 border-b-4 flex items-center justify-between transition-all duration-500 ${
+                                    isPlayingThis 
+                                        ? 'bg-yellow-100 border-yellow-300 scale-105 shadow-lg z-10' 
+                                        : 'bg-white border-slate-200 hover:bg-slate-50'
+                                } ${!isAutoPlaying ? 'cursor-pointer active:border-b-2 active:translate-y-[2px]' : ''}`}
+                            >
+                                <div className="flex-1 min-w-0 mr-2">
+                                    <h3 className={`font-black text-lg truncate transition-colors ${isPlayingThis ? 'text-yellow-800' : 'text-slate-700 group-hover:text-sky-500'}`}>
+                                        {word.target}
+                                    </h3>
+                                    <p className={`font-medium text-sm truncate ${isPlayingThis ? 'text-yellow-600' : 'text-slate-500'}`}>
+                                        {word.vietnamese}
+                                    </p>
+                                </div>
                                 
-                                <button 
-                                    onClick={(e) => handleListFavoriteClick(e, word.id, !!word.isFavorite)}
-                                    className={`p-2 rounded-xl transition-colors ${word.isFavorite ? 'text-rose-500 bg-rose-50' : 'text-slate-300 hover:text-rose-400'}`}
-                                >
-                                    <Heart className={`w-5 h-5 ${word.isFavorite ? 'fill-rose-500' : ''}`} />
-                                </button>
-                                
-                                {word.mastered && <CheckCircle className="w-5 h-5 text-green-500 fill-green-100" />}
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {!isAutoPlaying && (
+                                        <>
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    speakFast(word.target);
+                                                }}
+                                                className="p-2 rounded-xl text-slate-400 bg-slate-100 border border-slate-200 hover:text-sky-500 hover:border-sky-300 transition-colors"
+                                            >
+                                                <Zap className="w-4 h-4" />
+                                            </button>
+                                            
+                                            <button 
+                                                onClick={(e) => handleListFavoriteClick(e, word.id, !!word.isFavorite)}
+                                                className={`p-2 rounded-xl transition-colors ${word.isFavorite ? 'text-rose-500 bg-rose-50' : 'text-slate-300 hover:text-rose-400'}`}
+                                            >
+                                                <Heart className={`w-5 h-5 ${word.isFavorite ? 'fill-rose-500' : ''}`} />
+                                            </button>
+                                        </>
+                                    )}
+                                    
+                                    {word.mastered && <CheckCircle className="w-5 h-5 text-green-500 fill-green-100" />}
+                                    {isPlayingThis && <Volume2 className="w-5 h-5 text-yellow-600 animate-pulse" />}
+                                </div>
                             </div>
-                        </div>
-                    ))
+                        );
+                    })
                 )}
             </>
         )}
@@ -513,6 +701,67 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
         )}
 
       </div>
+
+      {/* AUTO PLAY CONTROLS BAR */}
+      {isAutoPlaying && (
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 w-[90%] max-w-lg bg-white/90 backdrop-blur-xl border-2 border-slate-200 shadow-2xl rounded-3xl p-4 flex flex-col gap-4 z-50 animate-in slide-in-from-bottom">
+            <div className="flex items-center justify-between">
+                <div className="flex flex-col">
+                    <span className="text-[10px] font-black uppercase text-indigo-500 tracking-wider">
+                        {t.autoPlay} • {playQueue.length > 0 ? `${currentPlayIndex + 1}/${playQueue.length}` : '0/0'}
+                    </span>
+                    <span className="font-bold text-slate-700 truncate max-w-[150px]">
+                        {playQueue[currentPlayIndex]?.target || '...'}
+                    </span>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                    <button 
+                        onClick={() => setShowSettings(!showSettings)}
+                        className={`p-3 rounded-xl ${showSettings ? 'bg-slate-200 text-slate-700' : 'bg-slate-100 text-slate-400'}`}
+                    >
+                        <Clock className="w-5 h-5" />
+                    </button>
+
+                    <button 
+                        onClick={togglePause}
+                        className="w-14 h-14 rounded-2xl bg-indigo-500 text-white border-b-4 border-indigo-700 active:border-b-0 active:translate-y-1 flex items-center justify-center shadow-lg shadow-indigo-200"
+                    >
+                        {isPaused ? <Play className="w-6 h-6 fill-current" /> : <Pause className="w-6 h-6 fill-current" />}
+                    </button>
+
+                    <button 
+                        onClick={stopAutoPlay}
+                        className="p-3 rounded-xl bg-rose-100 text-rose-500 hover:bg-rose-200"
+                    >
+                        <Square className="w-5 h-5 fill-current" />
+                    </button>
+                </div>
+            </div>
+
+            {showSettings && (
+                <div className="bg-slate-100 rounded-xl p-4 animate-in slide-in-from-top duration-200">
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs font-bold text-slate-500 uppercase">{t.delay}: {playDelay/1000}s</span>
+                    </div>
+                    <input 
+                        type="range" 
+                        min="1000" 
+                        max="5000" 
+                        step="500"
+                        value={playDelay}
+                        onChange={(e) => setPlayDelay(Number(e.target.value))}
+                        className="w-full h-2 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                    />
+                    <div className="flex justify-between text-[10px] text-slate-400 font-bold mt-1">
+                        <span>1s</span>
+                        <span>3s</span>
+                        <span>5s</span>
+                    </div>
+                </div>
+            )}
+        </div>
+      )}
 
       {/* ADD NEW WORD MODAL (Same as before) */}
       {isAddModalOpen && (

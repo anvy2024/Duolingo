@@ -19,6 +19,7 @@ export default function App() {
   const [vocab, setVocab] = useState<VocabularyWord[]>([]);
   const [currentBatch, setCurrentBatch] = useState<VocabularyWord[]>([]);
   const [flashcardIndex, setFlashcardIndex] = useState(0);
+  const [studyListTitle, setStudyListTitle] = useState<string>('');
   
   // News State
   const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([]);
@@ -159,6 +160,14 @@ export default function App() {
       const updatedVocab = appendVocabulary(newWords, selectedLang);
       setVocab(updatedVocab);
       setCurrentBatch(newWords);
+      
+      // Dynamic Title
+      const t = TRANSLATIONS[selectedLang];
+      let title = t.newVocab;
+      if (topic === 'common-verbs') title = t.commonVerbs;
+      if (topic === 'irregular-verbs') title = t.irregularVerbs;
+      setStudyListTitle(title);
+      
       setMode(AppMode.STUDY_LIST);
     } catch (err) {
       console.error(err);
@@ -171,8 +180,6 @@ export default function App() {
   
   const handleOpenNews = () => {
       setMode(AppMode.NEWS_READER);
-      // We rely on initial load, but if empty we might want to fetch automatically
-      // For now, user sees empty list and clicks "Load More" or sees existing list
       if (newsArticles.length === 0 && selectedLang) {
            handleFetchMoreNews();
       }
@@ -205,30 +212,32 @@ export default function App() {
   };
 
   const handleStartReview = () => {
-    if (vocab.length === 0) return;
+    if (vocab.length === 0 || !selectedLang) return;
     const shuffled = [...vocab].sort(() => 0.5 - Math.random());
     const selected = shuffled.slice(0, 20);
     setCurrentBatch(selected);
-    setFlashcardIndex(0);
-    setMode(AppMode.FLASHCARD);
+    setStudyListTitle(TRANSLATIONS[selectedLang].review);
+    setMode(AppMode.STUDY_LIST); // GO TO LIST FIRST FOR AUTOPLAY
   };
 
   const handleStartFavorites = () => {
+      if (!selectedLang) return;
       const favorites = vocab.filter(v => v.isFavorite);
       if (favorites.length === 0) return;
       const shuffled = [...favorites].sort(() => 0.5 - Math.random());
       setCurrentBatch(shuffled);
-      setFlashcardIndex(0);
-      setMode(AppMode.FLASHCARD);
+      setStudyListTitle(TRANSLATIONS[selectedLang].favorites);
+      setMode(AppMode.STUDY_LIST); // GO TO LIST FIRST FOR AUTOPLAY
   }
 
   const handleStartMastered = () => {
+    if (!selectedLang) return;
     const mastered = vocab.filter(v => v.mastered);
     if (mastered.length === 0) return;
     const shuffled = [...mastered].sort(() => 0.5 - Math.random());
     setCurrentBatch(shuffled);
-    setFlashcardIndex(0);
-    setMode(AppMode.FLASHCARD);
+    setStudyListTitle(TRANSLATIONS[selectedLang].mastered);
+    setMode(AppMode.STUDY_LIST); // GO TO LIST FIRST FOR AUTOPLAY
   }
 
   const handleToggleMastered = (id: string, currentStatus: boolean) => {
@@ -494,33 +503,18 @@ export default function App() {
       {/* STUDY LIST */}
       {mode === AppMode.STUDY_LIST && selectedLang && (
         <div className="flex flex-col h-full overflow-hidden bg-gray-100">
-             <div className="bg-gray-100 p-4 flex justify-between items-center border-b-2 border-slate-200 sticky top-0 z-10">
-                <button onClick={() => setMode(AppMode.DASHBOARD)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
-                    <X className="w-6 h-6 text-slate-400" />
-                </button>
-                
-                {/* Progress Bar Placeholder */}
-                <div className="flex-1 mx-4 h-4 bg-slate-200 rounded-full overflow-hidden">
-                    <div className="w-0 h-full bg-green-500 rounded-full"></div>
-                </div>
-                
-                <div className="font-extrabold text-green-500">
-                   {currentBatch.length}
-                </div>
-            </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar">
-                <StudyList 
-                    words={currentBatch} 
-                    onComplete={startFlashcards} 
-                    onBackToHome={() => setMode(AppMode.DASHBOARD)}
-                    speakFast={speakFast}
-                    speakAI={speakAI}
-                    aiLoading={aiAudioLoading}
-                    currentLang={selectedLang}
-                    onToggleMastered={handleToggleMastered}
-                    onToggleFavorite={handleToggleFavorite}
-                />
-            </div>
+            <StudyList 
+                words={currentBatch} 
+                title={studyListTitle}
+                onComplete={startFlashcards} 
+                onBackToHome={() => setMode(AppMode.DASHBOARD)}
+                speakFast={speakFast}
+                speakAI={speakAI}
+                aiLoading={aiAudioLoading}
+                currentLang={selectedLang}
+                onToggleMastered={handleToggleMastered}
+                onToggleFavorite={handleToggleFavorite}
+            />
         </div>
       )}
 

@@ -68,7 +68,15 @@ export const TRANSLATIONS = {
         playAgain: "Rejouer",
         needMoreWords: "Il faut au moins 4 mots pour jouer.",
         findPair: "Trouvez la paire",
-        listenChoose: "Écoutez et choisissez"
+        listenChoose: "Écoutez et choisissez",
+        autoPlay: "Lecture Auto",
+        stop: "Arrêter",
+        delay: "Délai",
+        seconds: "secondes",
+        filterAll: "Tout",
+        filterFav: "Favoris",
+        filterMastered: "Maîtrisés",
+        filterVerbs: "Verbes"
     },
     en: {
         dashboard: "Dashboard",
@@ -138,7 +146,15 @@ export const TRANSLATIONS = {
         playAgain: "Play Again",
         needMoreWords: "Need at least 4 words to play.",
         findPair: "Find the pair",
-        listenChoose: "Listen and choose"
+        listenChoose: "Listen and choose",
+        autoPlay: "Auto Play",
+        stop: "Stop",
+        delay: "Delay",
+        seconds: "seconds",
+        filterAll: "All",
+        filterFav: "Favorites",
+        filterMastered: "Mastered",
+        filterVerbs: "Verbs"
     },
     zh: {
         dashboard: "仪表板 (Bảng tin)",
@@ -208,7 +224,15 @@ export const TRANSLATIONS = {
         playAgain: "Chơi lại",
         needMoreWords: "Cần ít nhất 4 từ để chơi.",
         findPair: "Tìm cặp đúng",
-        listenChoose: "Nghe và chọn"
+        listenChoose: "Nghe và chọn",
+        autoPlay: "Tự động chạy",
+        stop: "Dừng",
+        delay: "Nghỉ",
+        seconds: "giây",
+        filterAll: "Tất cả",
+        filterFav: "Yêu thích",
+        filterMastered: "Đã thuộc",
+        filterVerbs: "Động từ"
     },
     es: {
         dashboard: "Tablero (Bảng tin)",
@@ -278,6 +302,14 @@ export const TRANSLATIONS = {
         playAgain: "Chơi lại",
         needMoreWords: "Cần ít nhất 4 từ để chơi.",
         findPair: "Tìm cặp đúng",
-        listenChoose: "Nghe và chọn"
+        listenChoose: "Nghe và chọn",
+        autoPlay: "Tự động chạy",
+        stop: "Dừng",
+        delay: "Nghỉ",
+        seconds: "giây",
+        filterAll: "Tất cả",
+        filterFav: "Yêu thích",
+        filterMastered: "Đã thuộc",
+        filterVerbs: "Động từ"
     }
 };
