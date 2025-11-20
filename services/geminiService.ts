@@ -1,7 +1,21 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { VocabularyWord, Language, NewsArticle } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Safe initialization of AI client to prevent white-screen crashes if env var is missing
+let ai: GoogleGenAI;
+try {
+    // In Vite/Netlify, ensure the key is defined in Environment Variables
+    // If process is undefined (browser), this might throw, so we catch it.
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+        console.error("API_KEY is missing! Please add it to Netlify Environment Variables.");
+    }
+    ai = new GoogleGenAI({ apiKey: apiKey || "MISSING_KEY" });
+} catch (e) {
+    console.error("Error initializing GoogleGenAI client:", e);
+    // Fallback to prevent app crash on load, calls will fail later with clear error
+    ai = new GoogleGenAI({ apiKey: "MISSING_KEY" });
+}
 
 export type GenerationTopic = 'general' | 'common-verbs' | 'irregular-verbs';
 
