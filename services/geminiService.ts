@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { VocabularyWord, Language, NewsArticle } from "../types";
 
@@ -330,9 +331,10 @@ export const generateLookupDetail = async (text: string, lang: Language): Promis
     }
 }
 
+// Use 'gtx' client as it is more permissive, but note this is still unofficial
 export const getSystemTTSUrl = (text: string, lang: Language): string => {
     const tl = lang === 'fr' ? 'fr' : 'en';
-    return `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${tl}&q=${encodeURIComponent(text)}`;
+    return `https://translate.google.com/translate_tts?ie=UTF-8&client=gtx&tl=${tl}&q=${encodeURIComponent(text)}`;
 }
 
 const addWavHeader = (pcmData: Uint8Array, sampleRate: number = 24000): ArrayBuffer => {

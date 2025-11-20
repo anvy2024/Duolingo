@@ -52,8 +52,20 @@ export default function App() {
     }
   }, [selectedLang, refreshData]);
 
+  // Ensure voices are loaded (for some browsers)
+  useEffect(() => {
+    const loadVoices = () => {
+        window.speechSynthesis.getVoices();
+    };
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  }, []);
+
   // Audio Logic
   const playAudioSource = (url: string, speed: number) => {
+      // Stop browser speech if running
+      window.speechSynthesis.cancel();
+
       if (currentAudioRef.current) {
           currentAudioRef.current.pause();
           currentAudioRef.current.currentTime = 0;
@@ -72,12 +84,37 @@ export default function App() {
     });
   };
 
+  // FIX: Use Web Speech API (Browser Native) instead of Google URL to avoid 404/CORS errors
   const speakFast = useCallback((text: string) => {
     try {
         if (!selectedLang) return;
-        const boostedSpeed = playbackSpeed * 1.2;
-        const url = getSystemTTSUrl(text, selectedLang);
-        playAudioSource(url, boostedSpeed);
+        
+        // Stop any playing audio (HTML Audio)
+        if (currentAudioRef.current) {
+            currentAudioRef.current.pause();
+            currentAudioRef.current.currentTime = 0;
+        }
+        // Stop any current speech
+        window.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        // Set Language
+        utterance.lang = selectedLang === 'fr' ? 'fr-FR' : 'en-US';
+        utterance.rate = playbackSpeed; 
+        
+        // Try to pick a better voice if available
+        const voices = window.speechSynthesis.getVoices();
+        const preferredVoice = voices.find(voice => 
+            voice.lang.startsWith(selectedLang === 'fr' ? 'fr' : 'en') && 
+            (voice.name.includes('Google') || voice.name.includes('Premium') || !voice.localService)
+        );
+        
+        if (preferredVoice) {
+            utterance.voice = preferredVoice;
+        }
+
+        window.speechSynthesis.speak(utterance);
+
     } catch (err) {
         console.error("System TTS error", err);
     }
@@ -85,6 +122,13 @@ export default function App() {
 
   const speakAI = useCallback(async (text: string) => {
     if (aiAudioLoading) return; 
+    
+    // Stop other audio sources
+    window.speechSynthesis.cancel();
+    if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+    }
+
     setAiAudioLoading(true);
     try {
         const base64Wav = await getHighQualityAudio(text);
