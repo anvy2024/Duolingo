@@ -86,7 +86,7 @@ export default function App() {
   // --- SPEECH LOGIC ---
 
   // 1. Native Browser Speech (Fallback & Desktop)
-  const speakNative = useCallback((text: string) => {
+  const speakNative = useCallback((text: string, onEnd?: () => void) => {
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         
@@ -109,12 +109,24 @@ export default function App() {
             utterance.voice = preferredVoice;
         }
 
+        utterance.onend = () => {
+            if (onEnd) onEnd();
+        };
+        
+        utterance.onerror = (e) => {
+            console.error("Native TTS Error", e);
+            if (onEnd) onEnd(); // Continue anyway
+        };
+
         window.speechSynthesis.speak(utterance);
   }, [selectedLang, playbackSpeed]);
 
   // 2. Smart Speak Fast (Google TTS for iOS + Fallback)
-  const speakFast = useCallback((text: string) => {
-    if (!selectedLang) return;
+  const speakFast = useCallback((text: string, onEnd?: () => void) => {
+    if (!selectedLang) {
+        if (onEnd) onEnd();
+        return;
+    }
 
     // Stop current audio
     if (currentAudioRef.current) {
@@ -141,10 +153,14 @@ export default function App() {
         const audio = new Audio(url);
         audio.playbackRate = playbackSpeed;
         
+        audio.onended = () => {
+            if (onEnd) onEnd();
+        };
+
         // CRITICAL: Fallback to native if Google TTS fails (Network error, 403, etc.)
         const handleFallback = () => {
             console.warn("Google TTS failed/blocked, falling back to native speech.");
-            speakNative(text);
+            speakNative(text, onEnd);
         };
 
         audio.onerror = handleFallback;
@@ -159,7 +175,7 @@ export default function App() {
         currentAudioRef.current = audio;
     } else {
         // On Desktop/Android, Chrome's native TTS is usually excellent and instant
-        speakNative(text);
+        speakNative(text, onEnd);
     }
   }, [selectedLang, playbackSpeed, speakNative]);
 

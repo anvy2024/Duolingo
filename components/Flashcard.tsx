@@ -1,11 +1,10 @@
-
 import React, { useState } from 'react';
 import { VocabularyWord } from '../types';
 import { Volume2, CheckCircle, Circle, Zap, Sparkles, Loader2, Heart, Radio } from 'lucide-react';
 
 interface FlashcardProps {
   word: VocabularyWord;
-  speakFast: (text: string) => void;
+  speakFast: (text: string, onEnd?: () => void) => void;
   speakAI: (text: string) => void;
   aiLoading: boolean;
   onToggleMastered?: (id: string, currentStatus: boolean) => void;

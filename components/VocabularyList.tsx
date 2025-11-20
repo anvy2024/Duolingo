@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { VocabularyWord, Language } from '../types';
 import { Zap, Sparkles, Search, ArrowLeft, Trash2, X, Heart, CheckCircle, Plus, Save, Loader2, Radio, Gamepad2, Play, HelpCircle, Headphones, Grid, Volume2, Pause, Square, Clock, Shuffle, Filter, Circle } from 'lucide-react';
@@ -10,7 +9,7 @@ interface VocabularyListProps {
   words: VocabularyWord[];
   currentLang: Language;
   onBack: () => void;
-  speakFast: (text: string) => void;
+  speakFast: (text: string, onEnd?: () => void) => void;
   speakAI: (text: string) => void;
   aiLoading: boolean;
   onDelete: (id: string) => void;
@@ -47,7 +46,6 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   const [playDelay, setPlayDelay] = useState(2000); // 2000ms = 2s default
   const [showSettings, setShowSettings] = useState(false);
   const playTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   // Form State
   const [newTarget, setNewTarget] = useState('');
@@ -134,43 +132,13 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    // Speak Logic (Local Utterance to handle onEnd)
+    // Speak Logic Using passed speakFast for Google TTS consistency
     const speakCurrent = () => {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(word.target);
-        
-        // Lang Config
-        if (currentLang === 'fr') utterance.lang = 'fr-FR';
-        else if (currentLang === 'en') utterance.lang = 'en-US';
-        else if (currentLang === 'zh') utterance.lang = 'zh-CN';
-        else if (currentLang === 'es') utterance.lang = 'es-ES';
-
-        utterance.rate = playbackSpeed;
-
-        // Try to pick best voice (copy from App.tsx logic)
-        const voices = window.speechSynthesis.getVoices();
-        const langPrefix = currentLang === 'zh' ? 'zh' : currentLang;
-        const preferredVoice = voices.find(voice => 
-            voice.lang.startsWith(langPrefix) && 
-            (voice.name.includes('Google') || voice.name.includes('Premium') || !voice.localService)
-        );
-        if (preferredVoice) utterance.voice = preferredVoice;
-
-        utterance.onend = () => {
+        speakFast(word.target, () => {
             playTimeoutRef.current = setTimeout(() => {
                 setCurrentPlayIndex(prev => prev + 1);
             }, playDelay);
-        };
-        
-        utterance.onerror = () => {
-             // If error, skip after delay
-             playTimeoutRef.current = setTimeout(() => {
-                setCurrentPlayIndex(prev => prev + 1);
-            }, 1000);
-        };
-
-        synthRef.current = utterance;
-        window.speechSynthesis.speak(utterance);
+        });
     };
 
     // Small delay before speaking to allow scroll to finish visually
@@ -181,7 +149,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
         if (playTimeoutRef.current) clearTimeout(playTimeoutRef.current);
         window.speechSynthesis.cancel();
     };
-  }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue]);
+  }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue, speakFast, playDelay]);
 
 
   // --- GAME LOGIC ---

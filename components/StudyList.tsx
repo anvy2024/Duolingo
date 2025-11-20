@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { VocabularyWord, Language } from '../types';
 import { Zap, Sparkles, ArrowRight, Volume2, Home, Heart, CheckCircle, Circle, Play, Pause, Square, Clock, X } from 'lucide-react';
@@ -9,7 +8,7 @@ interface StudyListProps {
   title?: string;
   onComplete: () => void;
   onBackToHome: () => void;
-  speakFast: (text: string) => void;
+  speakFast: (text: string, onEnd?: () => void) => void;
   speakAI: (text: string) => void;
   aiLoading: boolean;
   currentLang: Language;
@@ -32,7 +31,6 @@ export const StudyList: React.FC<StudyListProps> = ({
   const [playDelay, setPlayDelay] = useState(2000); // Default 2s
   const [showSettings, setShowSettings] = useState(false);
   const playTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   // Stop autoplay on unmount
   useEffect(() => {
@@ -44,10 +42,7 @@ export const StudyList: React.FC<StudyListProps> = ({
 
   const startAutoPlay = () => {
       if (words.length === 0) return;
-      // Auto play follows the current list order, or you can shuffle if desired. 
-      // For study list (review), sticking to order might be better, but user asked for random.
-      // However, App.tsx already shuffled the list passed to `words` prop for review/favorites.
-      // So we just play `words` as is.
+      // Auto play follows the current list order
       setPlayQueue(words);
       setCurrentPlayIndex(0);
       setIsAutoPlaying(true);
@@ -67,7 +62,7 @@ export const StudyList: React.FC<StudyListProps> = ({
   const togglePause = () => {
       if (isPaused) {
           setIsPaused(false);
-          window.speechSynthesis.cancel(); // Logic restart loop
+          window.speechSynthesis.cancel();
       } else {
           setIsPaused(true);
           window.speechSynthesis.cancel();
@@ -92,38 +87,14 @@ export const StudyList: React.FC<StudyListProps> = ({
     }
 
     const speakCurrent = () => {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(word.target);
-        
-        if (currentLang === 'fr') utterance.lang = 'fr-FR';
-        else if (currentLang === 'en') utterance.lang = 'en-US';
-        else if (currentLang === 'zh') utterance.lang = 'zh-CN';
-        else if (currentLang === 'es') utterance.lang = 'es-ES';
-
-        utterance.rate = playbackSpeed; 
-
-        const voices = window.speechSynthesis.getVoices();
-        const langPrefix = currentLang === 'zh' ? 'zh' : currentLang;
-        const preferredVoice = voices.find(voice => 
-            voice.lang.startsWith(langPrefix) && 
-            (voice.name.includes('Google') || voice.name.includes('Premium') || !voice.localService)
-        );
-        if (preferredVoice) utterance.voice = preferredVoice;
-
-        utterance.onend = () => {
+        // Use the robust speakFast function passed from App.tsx
+        // This handles Google TTS vs Native fallback on iOS correctly
+        speakFast(word.target, () => {
+            // On End callback to trigger next word
             playTimeoutRef.current = setTimeout(() => {
                 setCurrentPlayIndex(prev => prev + 1);
             }, playDelay);
-        };
-        
-        utterance.onerror = () => {
-             playTimeoutRef.current = setTimeout(() => {
-                setCurrentPlayIndex(prev => prev + 1);
-            }, 1000);
-        };
-
-        synthRef.current = utterance;
-        window.speechSynthesis.speak(utterance);
+        });
     };
 
     const startDelay = setTimeout(speakCurrent, 500);
@@ -133,7 +104,7 @@ export const StudyList: React.FC<StudyListProps> = ({
         if (playTimeoutRef.current) clearTimeout(playTimeoutRef.current);
         window.speechSynthesis.cancel();
     };
-  }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue]); // Removed playbackSpeed dep to prevent restart on change mid-word
+  }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue, speakFast, playDelay]);
 
   const currentPlayingId = (isAutoPlaying && playQueue[currentPlayIndex]) ? playQueue[currentPlayIndex].id : null;
 

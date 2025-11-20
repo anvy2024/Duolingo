@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { NewsArticle, VocabularyWord, Language } from '../types';
 import { ArrowLeft, BookOpen, Volume2, Sparkles, Loader2, Search, X, Save, RefreshCw, Trash2, Heart } from 'lucide-react';
@@ -9,7 +8,7 @@ import { TRANSLATIONS } from '../constants/translations';
 interface NewsReaderProps {
     articles: NewsArticle[];
     onBack: () => void;
-    speakFast: (text: string) => void;
+    speakFast: (text: string, onEnd?: () => void) => void;
     speakAI: (text: string) => void;
     loading: boolean;
     aiLoading: boolean;
