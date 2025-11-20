@@ -1,0 +1,162 @@
+[
+  {
+    "id": "init_1",
+    "french": "Bonjour",
+    "vietnamese": "Xin chào",
+    "ipa": "/bɔ̃.ʒuʁ/",
+    "viet_pronunciation": "Bông-giua",
+    "example": {
+      "french": "Bonjour, comment ça va ?",
+      "vietnamese": "Xin chào, bạn khỏe không?",
+      "viet_pronunciation": "Bông-giua, co-măng sa va?"
+    },
+    "category": "general",
+    "mastered": false,
+    "isFavorite": false,
+    "learnedAt": 1700000000000
+  },
+  {
+    "id": "init_2",
+    "french": "Merci",
+    "vietnamese": "Cảm ơn",
+    "ipa": "/mɛʁ.si/",
+    "viet_pronunciation": "Méc-xi",
+    "example": {
+      "french": "Merci beaucoup pour votre aide.",
+      "vietnamese": "Cảm ơn rất nhiều vì sự giúp đỡ của bạn.",
+      "viet_pronunciation": "Méc-xi bô-cu pur vốt-trờ ét-đờ."
+    },
+    "category": "general",
+    "mastered": false,
+    "isFavorite": false,
+    "learnedAt": 1700000000001
+  },
+  {
+    "id": "init_3",
+    "french": "Oui",
+    "vietnamese": "Có / Vâng",
+    "ipa": "/wi/",
+    "viet_pronunciation": "Uy",
+    "example": {
+      "french": "Oui, je parle français.",
+      "vietnamese": "Vâng, tôi nói tiếng Pháp.",
+      "viet_pronunciation": "Uy, dơ pác-lờ phờ-răng-xè."
+    },
+    "category": "general",
+    "mastered": false,
+    "isFavorite": false,
+    "learnedAt": 1700000000002
+  },
+  {
+    "id": "init_4",
+    "french": "Non",
+    "vietnamese": "Không",
+    "ipa": "/nɔ̃/",
+    "viet_pronunciation": "Nông",
+    "example": {
+      "french": "Non, je ne comprends pas.",
+      "vietnamese": "Không, tôi không hiểu.",
+      "viet_pronunciation": "Nông, dơ nơ com-pờ-răng pa."
+    },
+    "category": "general",
+    "mastered": false,
+    "isFavorite": false,
+    "learnedAt": 1700000000003
+  },
+  {
+    "id": "init_5",
+    "french": "Être",
+    "vietnamese": "Thì, là, ở (To be)",
+    "ipa": "/ɛtʁ/",
+    "viet_pronunciation": "É-trờ",
+    "example": {
+      "french": "Je suis étudiant.",
+      "vietnamese": "Tôi là sinh viên.",
+      "viet_pronunciation": "Dơ suy ê-tu-đi-ăng."
+    },
+    "category": "common-verbs",
+    "mastered": false,
+    "isFavorite": false,
+    "learnedAt": 1700000000004
+  },
+  {
+    "id": "init_6",
+    "french": "Avoir",
+    "vietnamese": "Có (To have)",
+    "ipa": "/a.vwaʁ/",
+    "viet_pronunciation": "A-voa",
+    "example": {
+      "french": "J'ai un chat noir.",
+      "vietnamese": "Tôi có một con mèo đen.",
+      "viet_pronunciation": "Giê ăn sa noa."
+    },
+    "category": "common-verbs",
+    "mastered": false,
+    "isFavorite": false,
+    "learnedAt": 1700000000005
+  },
+  {
+    "id": "init_7",
+    "french": "Manger",
+    "vietnamese": "Ăn",
+    "ipa": "/mɑ̃.ʒe/",
+    "viet_pronunciation": "Măng-giê",
+    "example": {
+      "french": "Je mange une pomme.",
+      "vietnamese": "Tôi đang ăn một quả táo.",
+      "viet_pronunciation": "Dơ măng-dơ uyn pôm."
+    },
+    "category": "general",
+    "mastered": false,
+    "isFavorite": false,
+    "learnedAt": 1700000000006
+  },
+  {
+    "id": "init_8",
+    "french": "Boire",
+    "vietnamese": "Uống",
+    "ipa": "/bwaʁ/",
+    "viet_pronunciation": "Boa",
+    "example": {
+      "french": "Je veux boire de l'eau.",
+      "vietnamese": "Tôi muốn uống nước.",
+      "viet_pronunciation": "Dơ vơ boa đờ lô."
+    },
+    "category": "general",
+    "mastered": false,
+    "isFavorite": false,
+    "learnedAt": 1700000000007
+  },
+  {
+    "id": "init_9",
+    "french": "Aller",
+    "vietnamese": "Đi",
+    "ipa": "/a.le/",
+    "viet_pronunciation": "A-lê",
+    "example": {
+      "french": "Je vais à l'école.",
+      "vietnamese": "Tôi đi đến trường.",
+      "viet_pronunciation": "Dơ vê a lê-côn."
+    },
+    "category": "common-verbs",
+    "mastered": false,
+    "isFavorite": false,
+    "learnedAt": 1700000000008
+  },
+  {
+    "id": "init_10",
+    "french": "Amour",
+    "vietnamese": "Tình yêu",
+    "ipa": "/a.muʁ/",
+    "viet_pronunciation": "A-mua",
+    "example": {
+      "french": "C'est mon grand amour.",
+      "vietnamese": "Đó là tình yêu lớn của tôi.",
+      "viet_pronunciation": "Xê mông g-răng a-mua."
+    },
+    "category": "general",
+    "mastered": false,
+    "isFavorite": true,
+    "learnedAt": 1700000000009
+  }
+]
