@@ -55,7 +55,20 @@ export const TRANSLATIONS = {
         analyzing: "Analyse en cours...",
         saveWord: "Enregistrer le mot",
         markMastered: "Marquer comme maîtrisé",
-        markFavorite: "Ajouter aux favoris"
+        markFavorite: "Ajouter aux favoris",
+        games: "Jeux",
+        playGames: "Jouer",
+        quizMode: "Quiz Rapide",
+        audioMode: "Écoute",
+        matchMode: "Paires",
+        correct: "Correct !",
+        incorrect: "Incorrect",
+        gameOver: "Jeu terminé",
+        score: "Score",
+        playAgain: "Rejouer",
+        needMoreWords: "Il faut au moins 4 mots pour jouer.",
+        findPair: "Trouvez la paire",
+        listenChoose: "Écoutez et choisissez"
     },
     en: {
         dashboard: "Dashboard",
@@ -112,6 +125,19 @@ export const TRANSLATIONS = {
         analyzing: "Analyzing...",
         saveWord: "Save Word",
         markMastered: "Mark as Mastered",
-        markFavorite: "Add to Favorites"
+        markFavorite: "Add to Favorites",
+        games: "Games",
+        playGames: "Play Games",
+        quizMode: "Speed Quiz",
+        audioMode: "Listening",
+        matchMode: "Matching",
+        correct: "Correct!",
+        incorrect: "Incorrect",
+        gameOver: "Game Over",
+        score: "Score",
+        playAgain: "Play Again",
+        needMoreWords: "Need at least 4 words to play.",
+        findPair: "Find the pair",
+        listenChoose: "Listen and choose"
     }
 };

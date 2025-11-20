@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { RotateCw, GraduationCap, Sparkles, Library, Zap, AlertCircle, Heart, CheckCircle, Settings, ExternalLink, Newspaper, LogOut } from 'lucide-react';
+import { RotateCw, GraduationCap, Sparkles, Library, Zap, AlertCircle, Heart, CheckCircle, Settings, ExternalLink, Newspaper, Book } from 'lucide-react';
 import { GenerationTopic } from '../services/geminiService';
 import { Language } from '../types';
 import { TRANSLATIONS } from '../constants/translations';
@@ -53,18 +53,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
             
             {/* Hero Stats Card */}
             <div className="w-full space-y-4">
-                <div 
-                    onClick={onViewList}
-                    className="w-full bg-white rounded-3xl border-2 border-slate-200 border-b-4 p-6 flex items-center justify-between active:border-b-2 active:translate-y-[2px] transition-all cursor-pointer hover:bg-slate-50 group"
-                >
-                    <div>
-                        <h2 className="text-3xl font-extrabold text-slate-700 group-hover:text-sky-500 transition-colors">{totalLearned}</h2>
-                        <p className="text-sm font-bold text-slate-400 uppercase tracking-wide">{t.totalWords}</p>
-                    </div>
-                    <Library className="w-10 h-10 text-slate-300 group-hover:text-sky-500 transition-colors" />
-                </div>
-
                 <div className="grid grid-cols-2 gap-4">
+                    <div 
+                        onClick={onViewList}
+                        className="bg-white rounded-3xl border-2 border-slate-200 border-b-4 p-4 flex flex-col justify-between active:border-b-2 active:translate-y-[2px] transition-all cursor-pointer hover:bg-slate-50 group col-span-2"
+                    >
+                        <div className="flex justify-between items-start mb-2">
+                            <Library className="w-8 h-8 text-slate-300 group-hover:text-sky-500 transition-colors" />
+                            <span className="bg-sky-100 text-sky-600 text-xs font-black px-2 py-1 rounded-lg uppercase">{t.dictionary}</span>
+                        </div>
+                        <div>
+                            <h2 className="text-3xl font-extrabold text-slate-700 group-hover:text-sky-500 transition-colors">{totalLearned}</h2>
+                            <p className="text-sm font-bold text-slate-400 uppercase tracking-wide">{t.totalWords}</p>
+                        </div>
+                    </div>
+
                     <button 
                         onClick={onStartMastered}
                         disabled={masteredCount === 0}
@@ -155,23 +158,40 @@ export const Dashboard: React.FC<DashboardProps> = ({
             {/* Review Section */}
             <div className="space-y-4">
                  <h3 className="font-extrabold text-slate-700 text-lg px-1 uppercase tracking-wider">{t.practice}</h3>
-                 <button 
-                    onClick={onStartReview}
-                    disabled={totalLearned === 0}
-                    className={`w-full border-b-4 rounded-2xl p-4 flex items-center gap-4 transition-all active:border-b-0 active:mt-1 ${
-                        totalLearned === 0 
-                            ? 'bg-white border-slate-200 text-slate-300 cursor-not-allowed' 
-                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                >
-                    <div className={`p-3 rounded-xl ${totalLearned > 0 ? 'bg-blue-100 text-blue-500' : 'bg-slate-100 text-slate-300'}`}>
-                        <RotateCw className="w-6 h-6" />
-                    </div>
-                    <div className="text-left">
-                        <div className="font-extrabold text-lg">{t.review}</div>
-                        <div className="text-slate-400 text-sm font-medium">{t.reviewDesc}</div>
-                    </div>
-                </button>
+                 
+                 <div className="grid grid-cols-1 gap-4">
+                    <button 
+                        onClick={onStartReview}
+                        disabled={totalLearned === 0}
+                        className={`w-full border-b-4 rounded-2xl p-4 flex items-center gap-4 transition-all active:border-b-0 active:mt-1 ${
+                            totalLearned === 0 
+                                ? 'bg-white border-slate-200 text-slate-300 cursor-not-allowed' 
+                                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                    >
+                        <div className={`p-3 rounded-xl ${totalLearned > 0 ? 'bg-blue-100 text-blue-500' : 'bg-slate-100 text-slate-300'}`}>
+                            <RotateCw className="w-6 h-6" />
+                        </div>
+                        <div className="text-left">
+                            <div className="font-extrabold text-lg">{t.review}</div>
+                            <div className="text-slate-400 text-sm font-medium">{t.reviewDesc}</div>
+                        </div>
+                    </button>
+                    
+                    {/* Dictionary Button (Explicit) */}
+                    <button 
+                        onClick={onViewList}
+                        className="w-full bg-orange-500 hover:bg-orange-400 text-white border-orange-600 border-b-4 active:border-b-0 active:mt-1 rounded-2xl p-4 flex items-center gap-4 transition-all"
+                    >
+                         <div className="bg-white/20 p-3 rounded-xl">
+                            <Book className="w-6 h-6" />
+                        </div>
+                         <div className="text-left flex-1">
+                            <div className="font-extrabold text-lg">{t.dictionary} & {t.games}</div>
+                            <div className="text-orange-100 text-sm font-medium">{t.totalWords}: {totalLearned}</div>
+                        </div>
+                    </button>
+                 </div>
             </div>
 
             {/* Footer / Credits */}
