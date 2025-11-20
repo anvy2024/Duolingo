@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { VocabularyWord, Language } from '../types';
-import { Zap, Sparkles, Search, ArrowLeft, Trash2, X, Heart, CheckCircle, Plus, Save, Loader2, Radio, Gamepad2, Play, HelpCircle, Headphones, Grid, Volume2, Pause, Square, Clock, Shuffle, Filter } from 'lucide-react';
+import { Zap, Sparkles, Search, ArrowLeft, Trash2, X, Heart, CheckCircle, Plus, Save, Loader2, Radio, Gamepad2, Play, HelpCircle, Headphones, Grid, Volume2, Pause, Square, Clock, Shuffle, Filter, Circle } from 'lucide-react';
 import { Flashcard } from './Flashcard';
 import { generateSingleWordDetails } from '../services/geminiService';
 import { TRANSLATIONS } from '../constants/translations';
@@ -109,12 +109,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   const togglePause = () => {
       if (isPaused) {
           setIsPaused(false);
-          // Resume simply by triggering the effect or letting it continue
-          // If synth was mid-speech, cancel and restart current word might be safer
           window.speechSynthesis.cancel();
-          // Effect will re-trigger if we don't change index, but we need to make sure 
-          // it plays the current one.
-          // Actually, simpler is to just toggle state. 
       } else {
           setIsPaused(true);
           window.speechSynthesis.cancel();
@@ -186,7 +181,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
         if (playTimeoutRef.current) clearTimeout(playTimeoutRef.current);
         window.speechSynthesis.cancel();
     };
-  }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue]); // Removed playDelay/playbackSpeed from dependency to avoid restart mid-word if changed
+  }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue]);
 
 
   // --- GAME LOGIC ---
@@ -320,6 +315,11 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
     }
   };
 
+  const handleListMasterClick = (e: React.MouseEvent, id: string, status: boolean) => {
+      e.stopPropagation();
+      onToggleMastered(id, status);
+  };
+
   const handleCardToggleFavorite = (id: string, status: boolean) => {
       onToggleFavorite(id, status);
       if (selectedWord && selectedWord.id === id) {
@@ -398,8 +398,8 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   return (
     <div className="flex flex-col h-full max-w-2xl mx-auto w-full bg-gray-100 relative">
       {/* Header */}
-      <div className="p-4 sticky top-0 z-10 bg-gray-100/95 backdrop-blur-sm border-b-2 border-slate-200">
-        <div className="flex items-center justify-between mb-4">
+      <div className="p-4 sticky top-0 z-20 bg-gray-100/95 backdrop-blur-sm border-b-2 border-slate-200">
+        <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-3">
                 <button onClick={() => viewMode === 'LIST' ? onBack() : setViewMode('LIST')} className="p-2 hover:bg-slate-200 rounded-xl transition-colors text-slate-500">
                     <ArrowLeft className="w-6 h-6" />
@@ -413,7 +413,36 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
             
             {viewMode === 'LIST' && (
                 <div className="flex items-center gap-2">
-                    {!isAutoPlaying && (
+                    {isAutoPlaying ? (
+                        // AUTO PLAY CONTROLS IN HEADER
+                        <div className="flex items-center gap-2 animate-in slide-in-from-right duration-300">
+                             <span className="text-xs font-black text-indigo-500 mr-1">
+                                {playQueue.length > 0 ? `${currentPlayIndex + 1}/${playQueue.length}` : '0/0'}
+                            </span>
+                            
+                            <button 
+                                onClick={() => setShowSettings(!showSettings)}
+                                className={`p-2 rounded-xl ${showSettings ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}
+                            >
+                                <Clock className="w-5 h-5" />
+                            </button>
+
+                            <button 
+                                onClick={togglePause}
+                                className="p-2 rounded-xl bg-indigo-500 text-white hover:bg-indigo-400 shadow-sm"
+                            >
+                                {isPaused ? <Play className="w-5 h-5 fill-current" /> : <Pause className="w-5 h-5 fill-current" />}
+                            </button>
+
+                            <button 
+                                onClick={stopAutoPlay}
+                                className="p-2 rounded-xl bg-rose-100 text-rose-500 hover:bg-rose-200"
+                            >
+                                <Square className="w-5 h-5 fill-current" />
+                            </button>
+                        </div>
+                    ) : (
+                        // NORMAL CONTROLS
                         <>
                             <button 
                                 onClick={startAutoPlay}
@@ -441,8 +470,26 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
             )}
         </div>
         
+        {/* Auto Play Settings Dropdown */}
+        {isAutoPlaying && showSettings && (
+            <div className="absolute top-full right-4 mt-2 w-48 bg-white rounded-xl shadow-xl border-2 border-slate-100 p-3 z-30 animate-in slide-in-from-top-2">
+                <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-bold text-slate-500 uppercase">{t.delay}: {playDelay/1000}s</span>
+                </div>
+                <input 
+                    type="range" 
+                    min="1000" 
+                    max="5000" 
+                    step="500"
+                    value={playDelay}
+                    onChange={(e) => setPlayDelay(Number(e.target.value))}
+                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                />
+            </div>
+        )}
+        
         {viewMode === 'LIST' && !isAutoPlaying && (
-            <div className="space-y-2">
+            <div className="space-y-2 mt-2">
                 <div className="relative">
                     <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
                     <input 
@@ -486,7 +533,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
       </div>
 
       {/* CONTENT AREA */}
-      <div className={`flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar ${isAutoPlaying ? 'pb-48' : 'pb-24'}`}>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar pb-24">
         
         {/* 1. LIST VIEW */}
         {viewMode === 'LIST' && (
@@ -519,7 +566,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                                     </p>
                                 </div>
                                 
-                                <div className="flex items-center gap-2 shrink-0">
+                                <div className="flex items-center gap-1 shrink-0">
                                     {!isAutoPlaying && (
                                         <>
                                             <button 
@@ -529,19 +576,36 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                                                 }}
                                                 className="p-2 rounded-xl text-slate-400 bg-slate-100 border border-slate-200 hover:text-sky-500 hover:border-sky-300 transition-colors"
                                             >
-                                                <Zap className="w-4 h-4" />
+                                                <Zap className="w-5 h-5" />
+                                            </button>
+
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    speakAI(word.target);
+                                                }}
+                                                disabled={aiLoading}
+                                                className="p-2 rounded-xl text-white bg-sky-400 border-b-2 border-sky-600 hover:bg-sky-500 transition-colors disabled:opacity-50"
+                                            >
+                                                {aiLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
                                             </button>
                                             
                                             <button 
+                                                onClick={(e) => handleListMasterClick(e, word.id, !!word.mastered)}
+                                                className={`p-2 rounded-xl transition-colors border-b-2 active:border-b-0 active:translate-y-0.5 ${word.mastered ? 'text-green-500 bg-green-50 border-green-200' : 'text-slate-300 bg-slate-50 border-slate-200 hover:text-green-400'}`}
+                                            >
+                                                {word.mastered ? <CheckCircle className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
+                                            </button>
+
+                                            <button 
                                                 onClick={(e) => handleListFavoriteClick(e, word.id, !!word.isFavorite)}
-                                                className={`p-2 rounded-xl transition-colors ${word.isFavorite ? 'text-rose-500 bg-rose-50' : 'text-slate-300 hover:text-rose-400'}`}
+                                                className={`p-2 rounded-xl transition-colors border-b-2 active:border-b-0 active:translate-y-0.5 ${word.isFavorite ? 'text-rose-500 bg-rose-50 border-rose-200' : 'text-slate-300 bg-slate-50 border-slate-200 hover:text-rose-400'}`}
                                             >
                                                 <Heart className={`w-5 h-5 ${word.isFavorite ? 'fill-rose-500' : ''}`} />
                                             </button>
                                         </>
                                     )}
                                     
-                                    {word.mastered && <CheckCircle className="w-5 h-5 text-green-500 fill-green-100" />}
                                     {isPlayingThis && <Volume2 className="w-5 h-5 text-yellow-600 animate-pulse" />}
                                 </div>
                             </div>
@@ -701,67 +765,6 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
         )}
 
       </div>
-
-      {/* AUTO PLAY CONTROLS BAR */}
-      {isAutoPlaying && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 w-[90%] max-w-lg bg-white/90 backdrop-blur-xl border-2 border-slate-200 shadow-2xl rounded-3xl p-4 flex flex-col gap-4 z-50 animate-in slide-in-from-bottom">
-            <div className="flex items-center justify-between">
-                <div className="flex flex-col">
-                    <span className="text-[10px] font-black uppercase text-indigo-500 tracking-wider">
-                        {t.autoPlay} • {playQueue.length > 0 ? `${currentPlayIndex + 1}/${playQueue.length}` : '0/0'}
-                    </span>
-                    <span className="font-bold text-slate-700 truncate max-w-[150px]">
-                        {playQueue[currentPlayIndex]?.target || '...'}
-                    </span>
-                </div>
-                
-                <div className="flex items-center gap-3">
-                    <button 
-                        onClick={() => setShowSettings(!showSettings)}
-                        className={`p-3 rounded-xl ${showSettings ? 'bg-slate-200 text-slate-700' : 'bg-slate-100 text-slate-400'}`}
-                    >
-                        <Clock className="w-5 h-5" />
-                    </button>
-
-                    <button 
-                        onClick={togglePause}
-                        className="w-14 h-14 rounded-2xl bg-indigo-500 text-white border-b-4 border-indigo-700 active:border-b-0 active:translate-y-1 flex items-center justify-center shadow-lg shadow-indigo-200"
-                    >
-                        {isPaused ? <Play className="w-6 h-6 fill-current" /> : <Pause className="w-6 h-6 fill-current" />}
-                    </button>
-
-                    <button 
-                        onClick={stopAutoPlay}
-                        className="p-3 rounded-xl bg-rose-100 text-rose-500 hover:bg-rose-200"
-                    >
-                        <Square className="w-5 h-5 fill-current" />
-                    </button>
-                </div>
-            </div>
-
-            {showSettings && (
-                <div className="bg-slate-100 rounded-xl p-4 animate-in slide-in-from-top duration-200">
-                    <div className="flex justify-between items-center mb-2">
-                        <span className="text-xs font-bold text-slate-500 uppercase">{t.delay}: {playDelay/1000}s</span>
-                    </div>
-                    <input 
-                        type="range" 
-                        min="1000" 
-                        max="5000" 
-                        step="500"
-                        value={playDelay}
-                        onChange={(e) => setPlayDelay(Number(e.target.value))}
-                        className="w-full h-2 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                    />
-                    <div className="flex justify-between text-[10px] text-slate-400 font-bold mt-1">
-                        <span>1s</span>
-                        <span>3s</span>
-                        <span>5s</span>
-                    </div>
-                </div>
-            )}
-        </div>
-      )}
 
       {/* ADD NEW WORD MODAL (Same as before) */}
       {isAddModalOpen && (

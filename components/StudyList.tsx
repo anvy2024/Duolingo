@@ -15,11 +15,12 @@ interface StudyListProps {
   currentLang: Language;
   onToggleMastered: (id: string, status: boolean) => void;
   onToggleFavorite: (id: string, status: boolean) => void;
+  playbackSpeed?: number;
 }
 
 export const StudyList: React.FC<StudyListProps> = ({ 
     words, title, onComplete, onBackToHome, speakFast, speakAI, aiLoading, currentLang,
-    onToggleMastered, onToggleFavorite
+    onToggleMastered, onToggleFavorite, playbackSpeed = 1.0
 }) => {
   const t = TRANSLATIONS[currentLang];
 
@@ -99,7 +100,7 @@ export const StudyList: React.FC<StudyListProps> = ({
         else if (currentLang === 'zh') utterance.lang = 'zh-CN';
         else if (currentLang === 'es') utterance.lang = 'es-ES';
 
-        utterance.rate = 1.0; // Use standard speed or pass prop if needed
+        utterance.rate = playbackSpeed; 
 
         const voices = window.speechSynthesis.getVoices();
         const langPrefix = currentLang === 'zh' ? 'zh' : currentLang;
@@ -132,7 +133,7 @@ export const StudyList: React.FC<StudyListProps> = ({
         if (playTimeoutRef.current) clearTimeout(playTimeoutRef.current);
         window.speechSynthesis.cancel();
     };
-  }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue]);
+  }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue]); // Removed playbackSpeed dep to prevent restart on change mid-word
 
   const currentPlayingId = (isAutoPlaying && playQueue[currentPlayIndex]) ? playQueue[currentPlayIndex].id : null;
 
@@ -140,7 +141,7 @@ export const StudyList: React.FC<StudyListProps> = ({
     <div className="flex flex-col h-full max-w-2xl mx-auto w-full relative">
         
       {/* Header Bar */}
-      <div className="bg-gray-100 p-4 flex justify-between items-center border-b-2 border-slate-200 sticky top-0 z-10">
+      <div className="bg-gray-100 p-4 flex justify-between items-center border-b-2 border-slate-200 sticky top-0 z-20">
             <div className="flex items-center gap-2">
                 <button onClick={onBackToHome} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
                     <X className="w-6 h-6 text-slate-400" />
@@ -151,7 +152,36 @@ export const StudyList: React.FC<StudyListProps> = ({
                 </div>
             </div>
             
-            {!isAutoPlaying && (
+            {isAutoPlaying ? (
+                // AUTO PLAY CONTROLS
+                <div className="flex items-center gap-2 animate-in slide-in-from-right duration-300">
+                    <span className="text-xs font-black text-indigo-500 mr-1">
+                        {playQueue.length > 0 ? `${currentPlayIndex + 1}/${playQueue.length}` : '0/0'}
+                    </span>
+                    
+                    <button 
+                        onClick={() => setShowSettings(!showSettings)}
+                        className={`p-2 rounded-xl ${showSettings ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}
+                    >
+                        <Clock className="w-5 h-5" />
+                    </button>
+
+                    <button 
+                        onClick={togglePause}
+                        className="p-2 rounded-xl bg-indigo-500 text-white hover:bg-indigo-400 shadow-sm"
+                    >
+                        {isPaused ? <Play className="w-5 h-5 fill-current" /> : <Pause className="w-5 h-5 fill-current" />}
+                    </button>
+
+                    <button 
+                        onClick={stopAutoPlay}
+                        className="p-2 rounded-xl bg-rose-100 text-rose-500 hover:bg-rose-200"
+                    >
+                        <Square className="w-5 h-5 fill-current" />
+                    </button>
+                </div>
+            ) : (
+                // NORMAL PLAY START BUTTON
                 <button 
                     onClick={startAutoPlay}
                     className="flex items-center justify-center p-2 bg-indigo-500 text-white rounded-xl border-indigo-600 border-b-4 active:border-b-0 active:translate-y-1 transition-all"
@@ -162,8 +192,26 @@ export const StudyList: React.FC<StudyListProps> = ({
             )}
       </div>
 
+      {/* Auto Play Settings Dropdown */}
+      {isAutoPlaying && showSettings && (
+          <div className="absolute top-[72px] right-4 w-48 bg-white rounded-xl shadow-xl border-2 border-slate-100 p-3 z-30 animate-in slide-in-from-top-2">
+              <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-bold text-slate-500 uppercase">{t.delay}: {playDelay/1000}s</span>
+              </div>
+              <input 
+                  type="range" 
+                  min="1000" 
+                  max="5000" 
+                  step="500"
+                  value={playDelay}
+                  onChange={(e) => setPlayDelay(Number(e.target.value))}
+                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+              />
+          </div>
+      )}
+
       {/* List Content */}
-      <div className={`flex-1 overflow-y-auto p-4 custom-scrollbar ${isAutoPlaying ? 'pb-48' : 'pb-24'}`}>
+      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar pb-24">
         
         {!isAutoPlaying && (
              <div className="bg-white rounded-2xl border-2 border-slate-200 p-6 mb-4 text-center shadow-sm">
@@ -271,67 +319,6 @@ export const StudyList: React.FC<StudyListProps> = ({
             })}
         </div>
       </div>
-
-      {/* AUTO PLAY CONTROLS BAR */}
-      {isAutoPlaying && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 w-[90%] max-w-lg bg-white/95 backdrop-blur-xl border-2 border-slate-200 shadow-2xl rounded-3xl p-4 flex flex-col gap-4 z-50 animate-in slide-in-from-bottom">
-            <div className="flex items-center justify-between">
-                <div className="flex flex-col">
-                    <span className="text-[10px] font-black uppercase text-indigo-500 tracking-wider">
-                        {t.autoPlay} • {playQueue.length > 0 ? `${currentPlayIndex + 1}/${playQueue.length}` : '0/0'}
-                    </span>
-                    <span className="font-bold text-slate-700 truncate max-w-[150px]">
-                        {playQueue[currentPlayIndex]?.target || '...'}
-                    </span>
-                </div>
-                
-                <div className="flex items-center gap-3">
-                    <button 
-                        onClick={() => setShowSettings(!showSettings)}
-                        className={`p-3 rounded-xl ${showSettings ? 'bg-slate-200 text-slate-700' : 'bg-slate-100 text-slate-400'}`}
-                    >
-                        <Clock className="w-5 h-5" />
-                    </button>
-
-                    <button 
-                        onClick={togglePause}
-                        className="w-14 h-14 rounded-2xl bg-indigo-500 text-white border-b-4 border-indigo-700 active:border-b-0 active:translate-y-1 flex items-center justify-center shadow-lg shadow-indigo-200"
-                    >
-                        {isPaused ? <Play className="w-6 h-6 fill-current" /> : <Pause className="w-6 h-6 fill-current" />}
-                    </button>
-
-                    <button 
-                        onClick={stopAutoPlay}
-                        className="p-3 rounded-xl bg-rose-100 text-rose-500 hover:bg-rose-200"
-                    >
-                        <Square className="w-5 h-5 fill-current" />
-                    </button>
-                </div>
-            </div>
-
-            {showSettings && (
-                <div className="bg-slate-100 rounded-xl p-4 animate-in slide-in-from-top duration-200">
-                    <div className="flex justify-between items-center mb-2">
-                        <span className="text-xs font-bold text-slate-500 uppercase">{t.delay}: {playDelay/1000}s</span>
-                    </div>
-                    <input 
-                        type="range" 
-                        min="1000" 
-                        max="5000" 
-                        step="500"
-                        value={playDelay}
-                        onChange={(e) => setPlayDelay(Number(e.target.value))}
-                        className="w-full h-2 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                    />
-                    <div className="flex justify-between text-[10px] text-slate-400 font-bold mt-1">
-                        <span>1s</span>
-                        <span>3s</span>
-                        <span>5s</span>
-                    </div>
-                </div>
-            )}
-        </div>
-      )}
     </div>
   );
 };

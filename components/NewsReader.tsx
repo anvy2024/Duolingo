@@ -15,12 +15,15 @@ interface NewsReaderProps {
     aiLoading: boolean;
     currentLang: Language;
     onAddWord: (word: VocabularyWord) => void; 
-    onLoadMore: () => void; // Function to fetch new news and append
+    onLoadMore: () => void; 
     onDeleteArticle: (id: string) => void;
+    playbackSpeed: number;
+    onToggleSpeed: () => void;
 }
 
 export const NewsReader: React.FC<NewsReaderProps> = ({ 
-    articles, onBack, speakFast, speakAI, loading, aiLoading, currentLang, onAddWord, onLoadMore, onDeleteArticle
+    articles, onBack, speakFast, speakAI, loading, aiLoading, currentLang, onAddWord, onLoadMore, onDeleteArticle,
+    playbackSpeed, onToggleSpeed
 }) => {
     const t = TRANSLATIONS[currentLang];
     const [selectedText, setSelectedText] = useState<string>('');
@@ -112,14 +115,22 @@ export const NewsReader: React.FC<NewsReaderProps> = ({
 
     return (
         <div className="flex flex-col h-full bg-gray-100 relative">
-            <div className="bg-gray-100/95 backdrop-blur-sm p-4 flex items-center gap-4 sticky top-0 z-10 border-b-2 border-slate-200">
+            <div className="bg-gray-100/95 backdrop-blur-sm p-4 flex items-center gap-2 sticky top-0 z-10 border-b-2 border-slate-200">
                 <button onClick={onBack} className="p-2 hover:bg-slate-200 rounded-xl transition-colors text-slate-500">
                     <ArrowLeft className="w-6 h-6" />
                 </button>
-                <div className="flex-1">
-                    <h2 className="text-xl font-black text-slate-700">{t.newsTitle}</h2>
-                    <p className="text-xs text-slate-400 font-bold">{langSubtitle}</p>
+                <div className="flex-1 min-w-0">
+                    <h2 className="text-xl font-black text-slate-700 truncate">{t.newsTitle}</h2>
+                    <p className="text-xs text-slate-400 font-bold truncate">{langSubtitle}</p>
                 </div>
+                
+                <button 
+                    onClick={onToggleSpeed}
+                    className="w-10 h-10 flex items-center justify-center bg-slate-200 text-slate-500 rounded-xl text-xs font-bold hover:bg-slate-300 transition-all"
+                >
+                    {playbackSpeed}x
+                </button>
+
                 <button 
                     onClick={onLoadMore}
                     disabled={loading}

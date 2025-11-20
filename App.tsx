@@ -373,7 +373,7 @@ export default function App() {
                     <Globe className="w-12 h-12 text-white" />
                 </div>
                 <h1 className="text-3xl font-black text-slate-700 mb-1">Dualingo AI</h1>
-                <p className="text-slate-500 font-bold text-base">Choose your path / Chọn ngôn ngữ</p>
+                <p className="text-slate-500 font-bold text-base">Master a new language with AI</p>
             </div>
 
             <div className="w-full max-w-md space-y-3 pb-6">
@@ -477,6 +477,8 @@ export default function App() {
             onAddWord={handleAddWord}
             onLoadMore={handleFetchMoreNews}
             onDeleteArticle={handleDeleteNews}
+            playbackSpeed={playbackSpeed}
+            onToggleSpeed={toggleSpeed}
           />
       )}
 
@@ -514,6 +516,7 @@ export default function App() {
                 currentLang={selectedLang}
                 onToggleMastered={handleToggleMastered}
                 onToggleFavorite={handleToggleFavorite}
+                playbackSpeed={playbackSpeed}
             />
         </div>
       )}
