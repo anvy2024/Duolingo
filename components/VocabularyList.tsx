@@ -259,6 +259,11 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
       setNewExViet('');
       setNewExVietPronun('');
   };
+  
+  let placeholder = "Ex: Chat";
+  if (currentLang === 'en') placeholder = "Ex: Cat";
+  if (currentLang === 'zh') placeholder = "Ex: Māo (猫)";
+  if (currentLang === 'es') placeholder = "Ex: Gato";
 
   return (
     <div className="flex flex-col h-full max-w-2xl mx-auto w-full bg-gray-100 relative">
@@ -527,7 +532,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                             <input 
                                 type="text" 
                                 className="flex-1 px-4 py-3 bg-slate-50 border-2 border-slate-200 text-slate-700 rounded-2xl focus:border-sky-500 outline-none font-bold text-lg placeholder:text-slate-300"
-                                placeholder={currentLang === 'fr' ? "Ex: Chat" : "Ex: Cat"}
+                                placeholder={placeholder}
                                 value={newTarget}
                                 onChange={(e) => setNewTarget(e.target.value)}
                             />
@@ -562,7 +567,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                         </div>
                     </div>
 
-                    {currentLang === 'fr' && (
+                    {currentLang !== 'en' && (
                         <div>
                             <label className="block text-sm font-extrabold text-slate-400 mb-2 uppercase">Pronunciation (Bồi)</label>
                             <input 

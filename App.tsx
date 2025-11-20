@@ -99,13 +99,18 @@ export default function App() {
 
         const utterance = new SpeechSynthesisUtterance(text);
         // Set Language
-        utterance.lang = selectedLang === 'fr' ? 'fr-FR' : 'en-US';
+        if (selectedLang === 'fr') utterance.lang = 'fr-FR';
+        else if (selectedLang === 'en') utterance.lang = 'en-US';
+        else if (selectedLang === 'zh') utterance.lang = 'zh-CN';
+        else if (selectedLang === 'es') utterance.lang = 'es-ES';
+        
         utterance.rate = playbackSpeed; 
         
         // Try to pick a better voice if available
         const voices = window.speechSynthesis.getVoices();
+        const langPrefix = selectedLang === 'zh' ? 'zh' : selectedLang; // zh-CN startswith zh
         const preferredVoice = voices.find(voice => 
-            voice.lang.startsWith(selectedLang === 'fr' ? 'fr' : 'en') && 
+            voice.lang.startsWith(langPrefix) && 
             (voice.name.includes('Google') || voice.name.includes('Premium') || !voice.localService)
         );
         
@@ -353,35 +358,20 @@ export default function App() {
 
       {/* LANGUAGE SELECTION SCREEN */}
       {mode === AppMode.LANGUAGE_SELECT && (
-        <div className="flex flex-col h-full bg-gray-100 p-6 items-center justify-center animate-in fade-in duration-500">
-            <div className="mb-10 text-center">
-                <div className="bg-green-500 w-24 h-24 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-xl rotate-3 border-b-[6px] border-green-600">
+        <div className="flex flex-col h-full bg-gray-100 p-6 items-center justify-center animate-in fade-in duration-500 overflow-y-auto">
+            <div className="mb-6 text-center shrink-0">
+                <div className="bg-green-500 w-24 h-24 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl rotate-3 border-b-[6px] border-green-600">
                     <Globe className="w-12 h-12 text-white" />
                 </div>
-                <h1 className="text-3xl font-black text-slate-700 mb-2">Bienvenue! / Welcome!</h1>
-                <p className="text-slate-500 font-bold text-lg">Choose your path / Choisissez votre chemin</p>
+                <h1 className="text-3xl font-black text-slate-700 mb-1">Dualingo AI</h1>
+                <p className="text-slate-500 font-bold text-base">Choose your path / Chọn ngôn ngữ</p>
             </div>
 
-            <div className="w-full max-w-md space-y-4">
-                <button 
-                    onClick={() => setSelectedLang('en')}
-                    className="w-full group relative bg-white border-2 border-slate-200 border-b-4 rounded-3xl p-6 flex items-center gap-4 hover:bg-slate-50 active:border-b-2 active:translate-y-[2px] transition-all"
-                >
-                    <div className="w-16 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-sm overflow-hidden relative border border-slate-200">
-                         <div className="absolute inset-0 flex">
-                            <div className="w-full h-full bg-blue-700 flex items-center justify-center text-white font-bold text-xs">US/UK</div>
-                        </div>
-                    </div>
-                    <div className="text-left flex-1">
-                        <h2 className="text-xl font-extrabold text-slate-700">English</h2>
-                        <p className="text-slate-400 font-bold text-sm">Level B1 (Intermediate)</p>
-                    </div>
-                    <ChevronRight className="w-6 h-6 text-slate-300 group-hover:text-slate-400" />
-                </button>
-
-                <button 
+            <div className="w-full max-w-md space-y-3 pb-6">
+                 {/* 1. FRENCH */}
+                 <button 
                     onClick={() => setSelectedLang('fr')}
-                    className="w-full group relative bg-white border-2 border-slate-200 border-b-4 rounded-3xl p-6 flex items-center gap-4 hover:bg-slate-50 active:border-b-2 active:translate-y-[2px] transition-all"
+                    className="w-full group relative bg-white border-2 border-slate-200 border-b-4 rounded-3xl p-5 flex items-center gap-4 hover:bg-slate-50 active:border-b-2 active:translate-y-[2px] transition-all"
                 >
                     <div className="w-16 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm overflow-hidden border border-slate-200">
                         <div className="w-1/3 h-full bg-blue-600"></div>
@@ -390,13 +380,60 @@ export default function App() {
                     </div>
                     <div className="text-left flex-1">
                         <h2 className="text-xl font-extrabold text-slate-700">Français</h2>
-                        <p className="text-slate-400 font-bold text-sm">Level A1 (Débutant)</p>
+                        <p className="text-slate-400 font-bold text-xs">Level A1 (Débutant)</p>
                     </div>
                      <ChevronRight className="w-6 h-6 text-slate-300 group-hover:text-slate-400" />
                 </button>
+
+                {/* 2. ENGLISH */}
+                <button 
+                    onClick={() => setSelectedLang('en')}
+                    className="w-full group relative bg-white border-2 border-slate-200 border-b-4 rounded-3xl p-5 flex items-center gap-4 hover:bg-slate-50 active:border-b-2 active:translate-y-[2px] transition-all"
+                >
+                    <div className="w-16 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-sm overflow-hidden relative border border-slate-200">
+                         <div className="absolute inset-0 flex">
+                            <div className="w-full h-full bg-blue-700 flex items-center justify-center text-white font-bold text-xs">US/UK</div>
+                        </div>
+                    </div>
+                    <div className="text-left flex-1">
+                        <h2 className="text-xl font-extrabold text-slate-700">English</h2>
+                        <p className="text-slate-400 font-bold text-xs">Level B1 (Intermediate)</p>
+                    </div>
+                    <ChevronRight className="w-6 h-6 text-slate-300 group-hover:text-slate-400" />
+                </button>
+
+                {/* 3. CHINESE */}
+                <button 
+                    onClick={() => setSelectedLang('zh')}
+                    className="w-full group relative bg-white border-2 border-slate-200 border-b-4 rounded-3xl p-5 flex items-center gap-4 hover:bg-slate-50 active:border-b-2 active:translate-y-[2px] transition-all"
+                >
+                    <div className="w-16 h-12 bg-red-600 rounded-xl flex items-center justify-center shadow-sm overflow-hidden relative border border-slate-200">
+                        <div className="text-yellow-400 font-black text-2xl">五</div>
+                    </div>
+                    <div className="text-left flex-1">
+                        <h2 className="text-xl font-extrabold text-slate-700">中文 (Chinese)</h2>
+                        <p className="text-slate-400 font-bold text-xs">Level A1 (Beginner)</p>
+                    </div>
+                    <ChevronRight className="w-6 h-6 text-slate-300 group-hover:text-slate-400" />
+                </button>
+
+                {/* 4. SPANISH */}
+                <button 
+                    onClick={() => setSelectedLang('es')}
+                    className="w-full group relative bg-white border-2 border-slate-200 border-b-4 rounded-3xl p-5 flex items-center gap-4 hover:bg-slate-50 active:border-b-2 active:translate-y-[2px] transition-all"
+                >
+                    <div className="w-16 h-12 bg-red-600 rounded-xl flex items-center justify-center shadow-sm overflow-hidden relative border border-slate-200">
+                        <div className="w-full h-1/3 bg-yellow-400 absolute top-1/3 flex items-center justify-center"></div>
+                    </div>
+                    <div className="text-left flex-1">
+                        <h2 className="text-xl font-extrabold text-slate-700">Español</h2>
+                        <p className="text-slate-400 font-bold text-xs">Level A1 (Beginner)</p>
+                    </div>
+                    <ChevronRight className="w-6 h-6 text-slate-300 group-hover:text-slate-400" />
+                </button>
             </div>
 
-            <p className="mt-12 text-slate-400 font-bold text-sm">Hana Minh Tran • Language Learning</p>
+            <p className="mt-4 text-slate-400 font-bold text-xs">Hana Minh Tran • Dualingo AI</p>
         </div>
       )}
 
@@ -587,7 +624,7 @@ export default function App() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl flex flex-col border-2 border-slate-200">
                 <div className="p-4 border-b-2 border-slate-100 flex justify-between items-center">
-                    <h3 className="text-xl font-extrabold text-slate-700">{t.profile} ({selectedLang === 'fr' ? 'FR' : 'EN'})</h3>
+                    <h3 className="text-xl font-extrabold text-slate-700">{t.profile} ({selectedLang.toUpperCase()})</h3>
                     <button onClick={() => setIsSettingsOpen(false)} className="p-2 bg-slate-100 rounded-xl hover:bg-slate-200 text-slate-500">
                         <X className="w-6 h-6" />
                     </button>

@@ -26,7 +26,7 @@ export interface NewsArticle {
     date: string;
 }
 
-export type Language = 'fr' | 'en';
+export type Language = 'fr' | 'en' | 'zh' | 'es';
 
 export enum AppMode {
     LANGUAGE_SELECT = 'LANGUAGE_SELECT',

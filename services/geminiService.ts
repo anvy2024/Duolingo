@@ -28,8 +28,19 @@ export const generateVocabularyBatch = async (existingWords: string[] = [], topi
   
   const modelId = "gemini-2.5-flash";
   
-  const targetLang = lang === 'fr' ? 'French' : 'English';
-  const level = lang === 'fr' ? 'A1 (Beginner)' : 'B1 (Intermediate)';
+  let targetLang = 'French';
+  let level = 'A1 (Beginner)';
+  
+  if (lang === 'en') {
+      targetLang = 'English';
+      level = 'B1 (Intermediate)';
+  } else if (lang === 'zh') {
+      targetLang = 'Chinese (Mandarin, Simplified)';
+      level = 'A1 (Beginner)';
+  } else if (lang === 'es') {
+      targetLang = 'Spanish';
+      level = 'A1 (Beginner)';
+  }
   
   let specificInstruction = "";
   if (topic === 'common-verbs') {
@@ -41,14 +52,18 @@ export const generateVocabularyBatch = async (existingWords: string[] = [], topi
   }
 
   // Logic for Vietnamese Pronunciation
-  const pronunciationInstruction = lang === 'fr' 
-    ? '4. Provide "Vietnamese Pronunciation Guide" (Phiên âm bồi).' 
-    : '4. For "viet_pronunciation", return an EMPTY STRING (Do not provide phonetic spelling for English B1).';
-  
-  const sentencePronunciationInstruction = lang === 'fr'
-    ? '7. Vietnamese pronunciation for the sentence.'
-    : '7. For sentence pronunciation, return an EMPTY STRING.';
+  let pronunciationInstruction = '4. Provide "Vietnamese Pronunciation Guide" (Phiên âm bồi).';
+  let sentencePronunciationInstruction = '7. Vietnamese pronunciation for the sentence.';
+  let ipaInstruction = "3. Provide IPA.";
 
+  if (lang === 'en') {
+      pronunciationInstruction = '4. For "viet_pronunciation", return an EMPTY STRING.';
+      sentencePronunciationInstruction = '7. For sentence pronunciation, return an EMPTY STRING.';
+  } else if (lang === 'zh') {
+      ipaInstruction = "3. Provide Pinyin with tone marks in the 'ipa' field (e.g., nǐ hǎo).";
+      pronunciationInstruction = '4. Provide "Vietnamese Pronunciation Guide" (Bồi) in viet_pronunciation.';
+  }
+  
   const prompt = `
     You are an expert ${targetLang} teacher for Vietnamese students.
     ${specificInstruction}
@@ -56,7 +71,7 @@ export const generateVocabularyBatch = async (existingWords: string[] = [], topi
     Requirements:
     1. Word must be in ${targetLang} (${level} difficulty).
     2. Provide meaning in Vietnamese.
-    3. Provide IPA.
+    ${ipaInstruction}
     ${pronunciationInstruction}
     5. Simple example sentence suited for ${level}.
     6. Vietnamese translation of the sentence.
@@ -124,12 +139,16 @@ export const generateVocabularyBatch = async (existingWords: string[] = [], topi
 };
 
 export const generateSingleWordDetails = async (word: string, lang: Language): Promise<Omit<VocabularyWord, 'id' | 'learnedAt' | 'mastered' | 'isFavorite'>> => {
-    const targetLang = lang === 'fr' ? 'French' : 'English';
-    const level = lang === 'fr' ? 'A1' : 'B1';
+    let targetLang = 'French';
+    let level = 'A1';
+    
+    if (lang === 'en') { targetLang = 'English'; level = 'B1'; }
+    else if (lang === 'zh') { targetLang = 'Chinese'; level = 'A1'; }
+    else if (lang === 'es') { targetLang = 'Spanish'; level = 'A1'; }
 
-    const pronunciationPrompt = lang === 'fr' 
-        ? 'Provide Vietnamese Pronunciation (Bồi).' 
-        : 'Return EMPTY STRING for viet_pronunciation.';
+    let pronunciationPrompt = 'Provide Vietnamese Pronunciation (Bồi).';
+    if (lang === 'en') pronunciationPrompt = 'Return EMPTY STRING for viet_pronunciation.';
+    if (lang === 'zh') pronunciationPrompt = 'Provide Pinyin in IPA field. Provide Viet Bồi in viet_pronunciation.';
 
     const prompt = `
       I have a ${targetLang} word: "${word}".
@@ -178,19 +197,31 @@ export const generateSingleWordDetails = async (word: string, lang: Language): P
 };
 
 export const generateCanadianNews = async (lang: Language): Promise<NewsArticle[]> => {
-    const targetLang = lang === 'fr' ? 'French' : 'English';
-    const level = lang === 'fr' ? 'A1' : 'B1';
+    let targetLang = 'French';
+    let level = 'A1';
+    let searchRegion = 'CANADA';
+    
+    if (lang === 'en') { 
+        targetLang = 'English'; 
+        level = 'B1'; 
+    } else if (lang === 'zh') { 
+        targetLang = 'Chinese (Simplified)'; 
+        level = 'A1'; 
+        searchRegion = 'CHINA'; 
+    } else if (lang === 'es') { 
+        targetLang = 'Spanish'; 
+        level = 'A1'; 
+        searchRegion = 'SPAIN or MEXICO'; 
+    }
 
     // Customize prompt based on language requirements
-    let lengthInstruction = "";
+    let lengthInstruction = "The content should be a SIMPLE, short summary suitable for A1 beginners.";
     if (lang === 'en') {
-        lengthInstruction = "The content MUST be a LONG, DETAILED article (approx. 300-500 words) suitable for B1 reading practice. Do not summarize it too much, keep the details.";
-    } else {
-        lengthInstruction = "The content should be a SIMPLE, short summary suitable for A1 beginners.";
+        lengthInstruction = "The content MUST be a LONG, DETAILED article (approx. 300-500 words) suitable for B1 reading practice.";
     }
 
     const prompt = `
-        Search for the latest news in CANADA (focus on major events).
+        Search for the latest news in ${searchRegion} (focus on major events).
         Select 3 interesting stories.
         
         For each story, rewrite it into ${targetLang} for ${level} level learners.
@@ -255,10 +286,18 @@ export const generateCanadianNews = async (lang: Language): Promise<NewsArticle[
 };
 
 export const generateLookupDetail = async (text: string, lang: Language): Promise<VocabularyWord> => {
-    const targetLang = lang === 'fr' ? 'French' : 'English';
-    const pronunciationPrompt = lang === 'fr' 
-        ? 'Provide Vietnamese Pronunciation (Bồi).' 
-        : 'Return EMPTY STRING for viet_pronunciation.';
+    let targetLang = 'French';
+    let pronunciationPrompt = 'Provide Vietnamese Pronunciation (Bồi).';
+    
+    if (lang === 'en') { 
+        targetLang = 'English'; 
+        pronunciationPrompt = 'Return EMPTY STRING for viet_pronunciation.'; 
+    } else if (lang === 'zh') { 
+        targetLang = 'Chinese'; 
+        pronunciationPrompt = 'Provide Pinyin in IPA field. Provide Viet Bồi in viet_pronunciation.'; 
+    } else if (lang === 'es') { 
+        targetLang = 'Spanish'; 
+    }
     
     const prompt = `
         I am a ${targetLang} learner.
@@ -333,7 +372,11 @@ export const generateLookupDetail = async (text: string, lang: Language): Promis
 
 // Use 'gtx' client as it is more permissive, but note this is still unofficial
 export const getSystemTTSUrl = (text: string, lang: Language): string => {
-    const tl = lang === 'fr' ? 'fr' : 'en';
+    let tl = 'fr';
+    if (lang === 'en') tl = 'en';
+    else if (lang === 'zh') tl = 'zh-CN';
+    else if (lang === 'es') tl = 'es';
+    
     return `https://translate.google.com/translate_tts?ie=UTF-8&client=gtx&tl=${tl}&q=${encodeURIComponent(text)}`;
 }
 

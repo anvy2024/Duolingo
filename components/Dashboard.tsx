@@ -25,18 +25,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
     onStartNew, onStartReview, onStartFavorites, onStartMastered, onViewList, onOpenSettings, onOpenNews, onSwitchLang 
 }) => {
   const t = TRANSLATIONS[currentLang];
+  
+  let langName = 'Français';
+  let langColor = 'bg-blue-500';
+  if (currentLang === 'en') { langName = 'English'; langColor = 'bg-blue-600'; }
+  else if (currentLang === 'zh') { langName = '中文'; langColor = 'bg-red-500'; }
+  else if (currentLang === 'es') { langName = 'Español'; langColor = 'bg-yellow-500'; }
 
   return (
     <div className="flex flex-col h-full bg-gray-100 overflow-y-auto custom-scrollbar">
         {/* Top Bar */}
         <div className="flex justify-between items-center p-4 sticky top-0 bg-gray-100/95 backdrop-blur-sm z-10 border-b-2 border-slate-200">
              <div className="flex items-center gap-2 cursor-pointer hover:opacity-80" onClick={onSwitchLang}>
-                <div className={`p-2 rounded-xl ${currentLang === 'fr' ? 'bg-blue-500' : 'bg-red-500'}`}>
+                <div className={`p-2 rounded-xl ${langColor}`}>
                     <GraduationCap className="w-6 h-6 text-white" />
                 </div>
                 <div>
                     <h1 className="text-xl font-extrabold text-slate-700 tracking-tight">
-                        {currentLang === 'fr' ? 'Français' : 'English'}
+                        {langName}
                     </h1>
                     <span className="text-xs font-bold text-slate-400 uppercase">{t.changeLang}</span>
                 </div>

@@ -105,6 +105,11 @@ export const NewsReader: React.FC<NewsReaderProps> = ({
         }
     }
 
+    let langSubtitle = 'Français (A1)';
+    if (currentLang === 'en') langSubtitle = 'English (B1)';
+    if (currentLang === 'zh') langSubtitle = 'Chinese (A1)';
+    if (currentLang === 'es') langSubtitle = 'Spanish (A1)';
+
     return (
         <div className="flex flex-col h-full bg-gray-100 relative">
             <div className="bg-gray-100/95 backdrop-blur-sm p-4 flex items-center gap-4 sticky top-0 z-10 border-b-2 border-slate-200">
@@ -113,7 +118,7 @@ export const NewsReader: React.FC<NewsReaderProps> = ({
                 </button>
                 <div className="flex-1">
                     <h2 className="text-xl font-black text-slate-700">{t.newsTitle}</h2>
-                    <p className="text-xs text-slate-400 font-bold">{currentLang === 'fr' ? 'Français (A1)' : 'English (B1)'}</p>
+                    <p className="text-xs text-slate-400 font-bold">{langSubtitle}</p>
                 </div>
                 <button 
                     onClick={onLoadMore}
