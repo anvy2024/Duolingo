@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppMode, VocabularyWord, Language, NewsArticle } from './types';
-import { generateVocabularyBatch, getSystemTTSUrl, getHighQualityAudio, GenerationTopic, generateCanadianNews } from './services/geminiService';
+import { generateVocabularyBatch, getHighQualityAudio, GenerationTopic, generateCanadianNews } from './services/geminiService';
 import { loadVocabularyData, appendVocabulary, updateWordStatus, removeVocabularyWord, getRawDataForExport, importDataFromJson, loadNewsData, appendNewsData, deleteNewsArticle } from './services/storageService';
 import { Dashboard } from './components/Dashboard';
 import { StudyList } from './components/StudyList';
@@ -85,21 +84,36 @@ export default function App() {
     });
   };
 
-  // FIX: Use Web Speech API (Browser Native) instead of Google URL to avoid 404/CORS errors
+  // UPDATED: Intelligent Speak Fast - Uses Google Translate TTS for iOS/Mobile
   const speakFast = useCallback((text: string) => {
     try {
         if (!selectedLang) return;
         
-        // Stop any playing audio (HTML Audio)
+        // Stop any playing audio
         if (currentAudioRef.current) {
             currentAudioRef.current.pause();
             currentAudioRef.current.currentTime = 0;
         }
-        // Stop any current speech
         window.speechSynthesis.cancel();
 
+        // Detect iOS/Mobile (Rough check)
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        
+        // If iOS, use Google Translate Hack for better quality than native
+        if (isIOS) {
+            let tl = 'fr';
+            if (selectedLang === 'en') tl = 'en';
+            else if (selectedLang === 'zh') tl = 'zh-CN';
+            else if (selectedLang === 'es') tl = 'es';
+            
+            const url = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q=${encodeURIComponent(text)}&tl=${tl}&total=1&idx=0&textlen=${text.length}`;
+            playAudioSource(url, playbackSpeed);
+            return;
+        }
+
+        // FOR DESKTOP (Chrome/Edge have good native voices)
         const utterance = new SpeechSynthesisUtterance(text);
-        // Set Language
         if (selectedLang === 'fr') utterance.lang = 'fr-FR';
         else if (selectedLang === 'en') utterance.lang = 'en-US';
         else if (selectedLang === 'zh') utterance.lang = 'zh-CN';
@@ -107,9 +121,9 @@ export default function App() {
         
         utterance.rate = playbackSpeed; 
         
-        // Try to pick a better voice if available
         const voices = window.speechSynthesis.getVoices();
-        const langPrefix = selectedLang === 'zh' ? 'zh' : selectedLang; // zh-CN startswith zh
+        const langPrefix = selectedLang === 'zh' ? 'zh' : selectedLang;
+        // Try to get a Google voice or Premium voice if available
         const preferredVoice = voices.find(voice => 
             voice.lang.startsWith(langPrefix) && 
             (voice.name.includes('Google') || voice.name.includes('Premium') || !voice.localService)
@@ -122,7 +136,7 @@ export default function App() {
         window.speechSynthesis.speak(utterance);
 
     } catch (err) {
-        console.error("System TTS error", err);
+        console.error("TTS error", err);
     }
   }, [playbackSpeed, selectedLang]);
 

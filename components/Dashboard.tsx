@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { RotateCw, GraduationCap, Sparkles, Library, Zap, AlertCircle, Heart, CheckCircle, Settings, ExternalLink, Newspaper, Book, Maximize, Minimize } from 'lucide-react';
 import { GenerationTopic } from '../services/geminiService';
@@ -56,8 +55,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-gray-100 overflow-y-auto custom-scrollbar">
-        {/* Top Bar */}
-        <div className="flex justify-between items-center p-4 sticky top-0 bg-gray-100/95 backdrop-blur-sm z-10 border-b-2 border-slate-200">
+        {/* Top Bar - Added pt-safe for iPhone Notch support */}
+        <div className="flex justify-between items-center p-4 sticky top-0 bg-gray-100/95 backdrop-blur-sm z-10 border-b-2 border-slate-200 pt-[env(safe-area-inset-top,20px)]">
              <div className="flex items-center gap-2 cursor-pointer hover:opacity-80" onClick={onSwitchLang}>
                 <div className={`p-2 rounded-xl ${langColor}`}>
                     <GraduationCap className="w-6 h-6 text-white" />
