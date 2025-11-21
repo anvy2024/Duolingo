@@ -4,6 +4,7 @@ import { VocabularyWord, Language } from '../types';
 import { Zap, Sparkles, ArrowRight, Volume2, Home, Heart, CheckCircle, Circle, Play, Pause, Square, Clock, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Flashcard } from './Flashcard';
 import { TRANSLATIONS } from '../constants/translations';
+import { FontSize } from '../App';
 
 interface StudyListProps {
   words: VocabularyWord[];
@@ -18,11 +19,13 @@ interface StudyListProps {
   onToggleFavorite: (id: string, status: boolean) => void;
   playbackSpeed?: number;
   swipeAutoplay: boolean;
+  fontSize?: FontSize;
 }
 
 export const StudyList: React.FC<StudyListProps> = ({ 
     words, title, onComplete, onBackToHome, speakFast, speakAI, aiLoading, currentLang,
-    onToggleMastered, onToggleFavorite, playbackSpeed = 1.0, swipeAutoplay
+    onToggleMastered, onToggleFavorite, playbackSpeed = 1.0, swipeAutoplay,
+    fontSize = 'normal'
 }) => {
   const t = TRANSLATIONS[currentLang];
 
@@ -272,6 +275,7 @@ export const StudyList: React.FC<StudyListProps> = ({
                     onToggleMastered={onToggleMastered}
                     onToggleFavorite={onToggleFavorite}
                     currentLang={currentLang}
+                    fontSize={fontSize} // Pass fontSize
                  />
              </div>
          )}

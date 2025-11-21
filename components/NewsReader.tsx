@@ -4,6 +4,7 @@ import { ArrowLeft, BookOpen, Volume2, Sparkles, Loader2, Search, X, Save, Refre
 import { generateLookupDetail } from '../services/geminiService';
 import { Flashcard } from './Flashcard';
 import { TRANSLATIONS } from '../constants/translations';
+import { FontSize } from '../App';
 
 interface NewsReaderProps {
     articles: NewsArticle[];
@@ -18,11 +19,12 @@ interface NewsReaderProps {
     onDeleteArticle: (id: string) => void;
     playbackSpeed: number;
     onToggleSpeed: () => void;
+    fontSize?: FontSize;
 }
 
 export const NewsReader: React.FC<NewsReaderProps> = ({ 
     articles, onBack, speakFast, speakAI, loading, aiLoading, currentLang, onAddWord, onLoadMore, onDeleteArticle,
-    playbackSpeed, onToggleSpeed
+    playbackSpeed, onToggleSpeed, fontSize = 'normal'
 }) => {
     const t = TRANSLATIONS[currentLang];
     const [selectedText, setSelectedText] = useState<string>('');
@@ -94,9 +96,21 @@ export const NewsReader: React.FC<NewsReaderProps> = ({
         }
     };
     
+    const getTextSizeClass = () => {
+        if (fontSize === 'huge') return 'text-2xl leading-loose';
+        if (fontSize === 'large') return 'text-xl leading-relaxed';
+        return 'text-lg leading-relaxed';
+    }
+
+    const getTranslationSizeClass = () => {
+        if (fontSize === 'huge') return 'text-xl leading-relaxed';
+        if (fontSize === 'large') return 'text-lg leading-relaxed';
+        return 'text-base leading-relaxed';
+    }
+
     const renderFormattedText = (text: string) => {
         return text.split('\n').map((str, index) => (
-            <p key={index} className="mb-4 text-slate-700 text-lg leading-relaxed font-medium">{str}</p>
+            <p key={index} className={`mb-4 text-slate-700 font-medium ${getTextSizeClass()}`}>{str}</p>
         ));
     }
 
@@ -197,7 +211,7 @@ export const NewsReader: React.FC<NewsReaderProps> = ({
 
                                     <div className="pl-4 border-l-4 border-slate-200 py-2">
                                         <p className="text-xs font-bold text-slate-400 uppercase mb-1">{t.translation}</p>
-                                        <p className="text-slate-600 italic text-base leading-relaxed">{article.translation}</p>
+                                        <p className={`text-slate-600 italic ${getTranslationSizeClass()}`}>{article.translation}</p>
                                     </div>
                                 </div>
                             </div>
@@ -259,6 +273,7 @@ export const NewsReader: React.FC<NewsReaderProps> = ({
                                     aiLoading={aiLoading}
                                     isViewMode={true} 
                                     onToggleFavorite={() => setIsLookupFavorite(!isLookupFavorite)}
+                                    fontSize={fontSize} // Pass fontSize
                                 />
                                 
                                 <button 

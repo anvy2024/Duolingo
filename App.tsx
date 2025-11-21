@@ -7,8 +7,10 @@ import { StudyList } from './components/StudyList';
 import { Flashcard } from './components/Flashcard';
 import { VocabularyList, FilterType } from './components/VocabularyList';
 import { NewsReader } from './components/NewsReader';
-import { ChevronLeft, ChevronRight, CheckCircle, Loader2, X, Download, Upload, AlertTriangle, Globe, BookOpen, ArrowRight, LogOut, Volume2, VolumeX } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Loader2, X, Download, Upload, AlertTriangle, Globe, BookOpen, ArrowRight, LogOut, Volume2, VolumeX, Type } from 'lucide-react';
 import { TRANSLATIONS } from './constants/translations';
+
+export type FontSize = 'normal' | 'large' | 'huge';
 
 export default function App() {
   // State for Language
@@ -28,6 +30,7 @@ export default function App() {
   // Settings
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [swipeAutoplay, setSwipeAutoplay] = useState(true);
+  const [fontSize, setFontSize] = useState<FontSize>('normal'); // NEW STATE
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   // REFS FOR AUDIO ENGINE
@@ -278,7 +281,7 @@ export default function App() {
     } finally {
         setAiAudioLoading(false);
     }
-  }, [aiAudioLoading, playbackSpeed]); // Removed speakFast from dependency to avoid circular logic if not used
+  }, [aiAudioLoading, playbackSpeed]); 
 
   // Main Logic Functions
   const handleStartNew = async (topic: GenerationTopic = 'general') => {
@@ -513,6 +516,7 @@ export default function App() {
           onToggleFavorite={handleToggleFavorite}
           playbackSpeed={playbackSpeed}
           swipeAutoplay={swipeAutoplay}
+          fontSize={fontSize}
         />
       )}
 
@@ -533,6 +537,7 @@ export default function App() {
             onEditWord={handleEditWord}
             initialFilter={initialFilter}
             swipeAutoplay={swipeAutoplay}
+            fontSize={fontSize}
           />
       )}
 
@@ -550,6 +555,7 @@ export default function App() {
               onDeleteArticle={handleDeleteNews}
               playbackSpeed={playbackSpeed}
               onToggleSpeed={toggleSpeed}
+              fontSize={fontSize}
           />
       )}
 
@@ -563,6 +569,34 @@ export default function App() {
                   </div>
 
                   <div className="space-y-4">
+                      {/* Font Size Setting */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                           <div className="flex items-center gap-2 mb-3">
+                               <Type className="w-5 h-5 text-indigo-500" />
+                               <p className="font-bold text-slate-600">Text Size</p>
+                           </div>
+                           <div className="flex gap-2">
+                               <button 
+                                    onClick={() => setFontSize('normal')}
+                                    className={`flex-1 py-3 rounded-xl font-bold transition-all text-sm ${fontSize === 'normal' ? 'bg-indigo-500 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200'}`}
+                               >
+                                   Aa
+                               </button>
+                               <button 
+                                    onClick={() => setFontSize('large')}
+                                    className={`flex-1 py-3 rounded-xl font-bold transition-all text-lg ${fontSize === 'large' ? 'bg-indigo-500 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200'}`}
+                               >
+                                   Aa
+                               </button>
+                               <button 
+                                    onClick={() => setFontSize('huge')}
+                                    className={`flex-1 py-3 rounded-xl font-bold transition-all text-xl ${fontSize === 'huge' ? 'bg-indigo-500 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200'}`}
+                               >
+                                   Aa
+                               </button>
+                           </div>
+                      </div>
+
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                            <p className="font-bold text-slate-600 mb-2">Audio Speed: {playbackSpeed}x</p>
                            <div className="flex gap-2">

@@ -5,6 +5,7 @@ import { Zap, Sparkles, Search, ArrowLeft, Trash2, X, Heart, CheckCircle, Plus, 
 import { Flashcard } from './Flashcard';
 import { generateSingleWordDetails } from '../services/geminiService';
 import { TRANSLATIONS } from '../constants/translations';
+import { FontSize } from '../App';
 
 export type FilterType = 'ALL' | 'FAV' | 'MASTERED' | 'VERBS';
 
@@ -24,13 +25,15 @@ interface VocabularyListProps {
   onEditWord: (word: VocabularyWord) => void;
   initialFilter?: FilterType;
   swipeAutoplay: boolean;
+  fontSize?: FontSize;
 }
 
 type ViewMode = 'LIST' | 'GAME_MENU' | 'GAME_QUIZ' | 'GAME_AUDIO' | 'GAME_MATCH' | 'GAME_FILL' | 'GAME_SCRAMBLE';
 
 export const VocabularyList: React.FC<VocabularyListProps> = ({ 
     words, currentLang, onBack, speakFast, speakAI, aiLoading, onDelete, 
-    onToggleMastered, onToggleFavorite, playbackSpeed, onToggleSpeed, onAddWord, onEditWord, initialFilter = 'ALL', swipeAutoplay
+    onToggleMastered, onToggleFavorite, playbackSpeed, onToggleSpeed, onAddWord, onEditWord, initialFilter = 'ALL', swipeAutoplay,
+    fontSize = 'normal'
 }) => {
   const t = TRANSLATIONS[currentLang];
   const [viewMode, setViewMode] = useState<ViewMode>('LIST');
@@ -94,7 +97,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
 
   // Matching Game Specifics
   const [matchedPairs, setMatchedPairs] = useState<string[]>([]);
-  const [flippedCards, setFlippedCards] = useState<{id: string, type: 'target' | 'viet'}[]>([]);
+  const [flippedCards, setFlippedCards] = useState<{id: string, type: 'target' | 'viet', index: number}[]>([]);
 
   // Filter Logic
   const filteredWords = words.filter(word => {
@@ -547,6 +550,19 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
 
   const currentPlayingId = (isAutoPlaying && playQueue[currentPlayIndex]) ? playQueue[currentPlayIndex].id : null;
 
+  // List text sizing
+  const getListItemTargetSize = () => {
+      if (fontSize === 'huge') return 'text-2xl';
+      if (fontSize === 'large') return 'text-xl';
+      return 'text-lg';
+  }
+  
+  const getListItemMeaningSize = () => {
+       if (fontSize === 'huge') return 'text-lg';
+       if (fontSize === 'large') return 'text-base';
+       return 'text-sm';
+  }
+
   return (
     <div className="flex flex-col h-full max-w-2xl mx-auto w-full bg-gray-100 relative">
       {/* Header */}
@@ -715,10 +731,10 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                                 } ${'cursor-pointer active:border-b-2 active:translate-y-[2px]'}`}
                             >
                                 <div className="flex-1 min-w-0 mr-2">
-                                    <h3 className={`font-black text-lg truncate transition-colors ${isPlayingThis ? 'text-yellow-800' : 'text-slate-700 group-hover:text-sky-500'}`}>
+                                    <h3 className={`font-black truncate transition-colors ${getListItemTargetSize()} ${isPlayingThis ? 'text-yellow-800' : 'text-slate-700 group-hover:text-sky-500'}`}>
                                         {word.target}
                                     </h3>
-                                    <p className={`font-medium text-sm truncate ${isPlayingThis ? 'text-yellow-600' : 'text-slate-500'}`}>
+                                    <p className={`font-medium truncate ${getListItemMeaningSize()} ${isPlayingThis ? 'text-yellow-600' : 'text-slate-500'}`}>
                                         {word.vietnamese}
                                     </p>
                                 </div>
@@ -1132,6 +1148,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                         onToggleFavorite={handleCardToggleFavorite}
                         currentLang={currentLang}
                         isViewMode={true} // ADDED isViewMode to constrain height in modal
+                        fontSize={fontSize} // Pass fontSize
                     />
                 </div>
                 

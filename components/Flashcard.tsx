@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { VocabularyWord, Language } from '../types';
 import { Volume2, CheckCircle, Circle, Zap, Loader2, Heart, Radio, Sparkles } from 'lucide-react';
+import { FontSize } from '../App';
 
 interface FlashcardProps {
   word: VocabularyWord;
@@ -11,9 +12,10 @@ interface FlashcardProps {
   onToggleFavorite?: (id: string, currentStatus: boolean) => void;
   isViewMode?: boolean;
   currentLang?: Language; 
+  fontSize?: FontSize; // Accepted fontSize prop
 }
 
-export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, aiLoading, onToggleMastered, onToggleFavorite, isViewMode = false, currentLang = 'fr' }) => {
+export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, aiLoading, onToggleMastered, onToggleFavorite, isViewMode = false, currentLang = 'fr', fontSize = 'normal' }) => {
   const [isFlipped, setIsFlipped] = useState(false);
   
   // Reset flip when word changes
@@ -53,13 +55,47 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
   const isPhraseMode = word.target.length > 50 || (word.target === word.example.target);
   const displayTarget = word.target;
 
-  // Adjust font size dynamically based on length
+  // Dynamic Font Size Logic
   const getFontSize = (text: string) => {
-      if (text.length > 80) return 'text-xl leading-normal text-left';
-      if (text.length > 40) return 'text-2xl leading-tight font-bold';
-      if (text.length > 15) return 'text-3xl font-extrabold';
+      const len = text.length;
+      // Huge Mode
+      if (fontSize === 'huge') {
+           if (len > 80) return 'text-2xl leading-normal text-left';
+           if (len > 40) return 'text-3xl leading-tight font-bold';
+           if (len > 15) return 'text-5xl font-extrabold';
+           return 'text-6xl font-black'; 
+      }
+      // Large Mode
+      if (fontSize === 'large') {
+           if (len > 80) return 'text-xl leading-normal text-left';
+           if (len > 40) return 'text-3xl leading-tight font-bold';
+           if (len > 15) return 'text-4xl font-extrabold';
+           return 'text-5xl font-black';
+      }
+      // Normal Mode
+      if (len > 80) return 'text-xl leading-normal text-left';
+      if (len > 40) return 'text-2xl leading-tight font-bold';
+      if (len > 15) return 'text-3xl font-extrabold';
       return 'text-5xl font-black'; 
   };
+
+  const getExampleSize = () => {
+      if (fontSize === 'huge') return 'text-xl font-bold leading-relaxed';
+      if (fontSize === 'large') return 'text-lg font-medium leading-relaxed';
+      return 'text-sm font-medium leading-relaxed';
+  }
+
+  const getBackMeaningSize = () => {
+      if (fontSize === 'huge') return 'text-4xl font-black leading-tight';
+      if (fontSize === 'large') return 'text-3xl font-black leading-tight';
+      return 'text-2xl font-black leading-tight';
+  }
+
+  const getBackExampleTargetSize = () => {
+      if (fontSize === 'huge') return 'text-2xl font-bold leading-snug';
+      if (fontSize === 'large') return 'text-xl font-bold leading-snug';
+      return 'text-lg font-bold leading-snug';
+  }
 
   return (
     <div 
@@ -127,7 +163,7 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
           {/* Bottom: Example Sentence (Front) */}
           {!isPhraseMode && (
               <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 shrink-0" onClick={(e) => e.stopPropagation()}>
-                   <p className="text-slate-600 font-medium text-center italic text-sm leading-relaxed mb-3 line-clamp-3">
+                   <p className={`text-slate-600 text-center italic mb-3 line-clamp-3 ${getExampleSize()}`}>
                        "{word.example.target}"
                    </p>
                    {/* RESTORED AUDIO BUTTONS FOR EXAMPLE */}
@@ -157,7 +193,7 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
              {/* Header: Meaning */}
              <div className="border-b-2 border-slate-100 pb-4 mb-4 text-left shrink-0">
                  <span className="text-xs font-bold text-slate-400 uppercase block mb-1">Ý nghĩa</span>
-                 <h3 className="text-2xl font-black text-slate-800 leading-tight">{word.vietnamese}</h3>
+                 <h3 className={`${getBackMeaningSize()} text-slate-800`}>{word.vietnamese}</h3>
              </div>
 
              <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 text-left">
@@ -165,12 +201,12 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 shrink-0">
                     <div className="flex items-center gap-3 mb-2">
                          <span className="bg-slate-200 text-slate-600 text-[10px] font-bold px-2 py-1 rounded">IPA</span>
-                         <span className="font-mono text-slate-600 font-medium text-sm">{word.ipa}</span>
+                         <span className={`font-mono text-slate-600 font-medium ${fontSize === 'huge' ? 'text-lg' : 'text-sm'}`}>{word.ipa}</span>
                     </div>
                     {word.viet_pronunciation && (
                         <div className="flex items-center gap-3">
                             <span className="bg-orange-100 text-orange-600 text-[10px] font-bold px-2 py-1 rounded">Bồi</span>
-                            <span className="text-orange-600 font-bold text-lg italic">{word.viet_pronunciation}</span>
+                            <span className={`text-orange-600 font-bold italic ${fontSize === 'huge' ? 'text-xl' : 'text-lg'}`}>{word.viet_pronunciation}</span>
                         </div>
                     )}
                  </div>
@@ -178,12 +214,12 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
                  {/* Example Box (Detailed) */}
                  <div className="bg-sky-50 p-4 rounded-2xl border border-sky-100 shrink-0">
                       <span className="text-[10px] font-black text-sky-400 uppercase mb-2 block">Ví dụ chi tiết</span>
-                      <p className="text-slate-700 font-bold text-lg leading-snug mb-1">{word.example.target}</p>
+                      <p className={`text-slate-700 mb-1 ${getBackExampleTargetSize()}`}>{word.example.target}</p>
                       {word.example.viet_pronunciation && (
                           <p className="text-slate-400 italic text-xs mb-3">{word.example.viet_pronunciation}</p>
                       )}
                       <div className="h-px bg-sky-200 w-full my-2"></div>
-                      <p className="text-slate-600 font-medium italic">"{word.example.vietnamese}"</p>
+                      <p className={`text-slate-600 font-medium italic ${fontSize === 'huge' ? 'text-lg' : 'text-base'}`}>"{word.example.vietnamese}"</p>
                       
                       <div className="flex justify-end gap-2 mt-3">
                            <button 
