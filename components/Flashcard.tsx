@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { VocabularyWord } from '../types';
 import { Volume2, CheckCircle, Circle, Zap, Sparkles, Loader2, Heart, Radio } from 'lucide-react';
@@ -37,14 +38,16 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
   const handleMasterClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (onToggleMastered) {
-        onToggleMastered(word.id, !!word.mastered);
+        // IMPORTANT: Pass the NEW status (inverted)
+        onToggleMastered(word.id, !word.mastered);
     }
   };
 
   const handleFavoriteClick = (e: React.MouseEvent) => {
       e.stopPropagation();
       if (onToggleFavorite) {
-          onToggleFavorite(word.id, !!word.isFavorite);
+          // IMPORTANT: Pass the NEW status (inverted)
+          onToggleFavorite(word.id, !word.isFavorite);
       }
   };
 

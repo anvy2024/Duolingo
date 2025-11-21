@@ -218,6 +218,16 @@ export const updateWordStatus = (wordId: string, updates: Partial<VocabularyWord
     return currentData;
 };
 
+export const editVocabularyWord = (wordId: string, updatedWord: VocabularyWord, lang: Language): VocabularyWord[] => {
+    const currentData = loadVocabularyData(lang);
+    const index = currentData.findIndex(w => w.id === wordId);
+    if (index !== -1) {
+        currentData[index] = { ...currentData[index], ...updatedWord, id: wordId }; 
+        saveVocabularyData(currentData, lang);
+    }
+    return currentData;
+};
+
 export const removeVocabularyWord = (wordId: string, lang: Language): VocabularyWord[] => {
     const currentData = loadVocabularyData(lang);
     const updatedData = currentData.filter(w => w.id !== wordId);

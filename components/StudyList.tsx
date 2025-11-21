@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { VocabularyWord, Language } from '../types';
 import { Zap, Sparkles, ArrowRight, Volume2, Home, Heart, CheckCircle, Circle, Play, Pause, Square, Clock, X } from 'lucide-react';
@@ -30,14 +31,18 @@ export const StudyList: React.FC<StudyListProps> = ({
   const [currentPlayIndex, setCurrentPlayIndex] = useState(0);
   const [playDelay, setPlayDelay] = useState(2000); // Default 2s
   const [showSettings, setShowSettings] = useState(false);
-  const playTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Refs for loop management
+  const loopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
 
-  // Stop autoplay on unmount
   useEffect(() => {
-    return () => {
-        if (playTimeoutRef.current) clearTimeout(playTimeoutRef.current);
-        window.speechSynthesis.cancel();
-    };
+      isMountedRef.current = true;
+      return () => {
+          isMountedRef.current = false;
+          if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
+          window.speechSynthesis.cancel();
+      };
   }, []);
 
   const startAutoPlay = () => {
@@ -55,24 +60,27 @@ export const StudyList: React.FC<StudyListProps> = ({
       setIsPaused(false);
       setPlayQueue([]);
       setCurrentPlayIndex(0);
+      if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
       window.speechSynthesis.cancel();
-      if (playTimeoutRef.current) clearTimeout(playTimeoutRef.current);
   };
 
   const togglePause = () => {
       if (isPaused) {
           setIsPaused(false);
-          window.speechSynthesis.cancel();
+          // Resume effectively happens by effect re-triggering
       } else {
           setIsPaused(true);
+          if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
           window.speechSynthesis.cancel();
-          if (playTimeoutRef.current) clearTimeout(playTimeoutRef.current);
       }
   };
 
+  // THE MAIN LOOP
   useEffect(() => {
+    // If not playing or paused, do nothing
     if (!isAutoPlaying || isPaused) return;
 
+    // If finished queue
     if (currentPlayIndex >= playQueue.length) {
         stopAutoPlay();
         return;
@@ -86,23 +94,27 @@ export const StudyList: React.FC<StudyListProps> = ({
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    const speakCurrent = () => {
-        // Use the robust speakFast function passed from App.tsx
-        // This handles Google TTS vs Native fallback on iOS correctly
-        speakFast(word.target, () => {
-            // On End callback to trigger next word
-            playTimeoutRef.current = setTimeout(() => {
-                setCurrentPlayIndex(prev => prev + 1);
-            }, playDelay);
-        });
+    // Logic to play and advance
+    let hasAdvanced = false;
+    
+    const playNext = () => {
+        if (hasAdvanced || !isMountedRef.current || !isAutoPlaying || isPaused) return;
+        hasAdvanced = true;
+        loopTimeoutRef.current = setTimeout(() => {
+             setCurrentPlayIndex(prev => prev + 1);
+        }, playDelay);
     };
 
-    const startDelay = setTimeout(speakCurrent, 500);
+    // Small delay before speaking to allow UI to update
+    const initialDelay = setTimeout(() => {
+         speakFast(word.target, playNext);
+    }, 500);
 
     return () => {
-        clearTimeout(startDelay);
-        if (playTimeoutRef.current) clearTimeout(playTimeoutRef.current);
-        window.speechSynthesis.cancel();
+        clearTimeout(initialDelay);
+        if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
+        // We don't cancel speech here immediately because it might cut off the end of a word 
+        // when switching to the delay phase, but strict cleanup happens on unmount/pause.
     };
   }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue, speakFast, playDelay]);
 
@@ -272,13 +284,13 @@ export const StudyList: React.FC<StudyListProps> = ({
                         {!isAutoPlaying && (
                             <div className="flex justify-end items-center gap-2 pt-2">
                                 <button 
-                                    onClick={() => onToggleFavorite(word.id, !!word.isFavorite)}
+                                    onClick={() => onToggleFavorite(word.id, !word.isFavorite)}
                                     className={`p-2 rounded-xl border-2 transition-all ${word.isFavorite ? 'bg-rose-50 border-rose-200 text-rose-500' : 'bg-white border-slate-200 text-slate-300 hover:border-rose-200 hover:text-rose-400'}`}
                                 >
                                     <Heart className={`w-5 h-5 ${word.isFavorite ? 'fill-rose-500' : ''}`} />
                                 </button>
                                 <button 
-                                    onClick={() => onToggleMastered(word.id, !!word.mastered)}
+                                    onClick={() => onToggleMastered(word.id, !word.mastered)}
                                     className={`p-2 rounded-xl border-2 transition-all ${word.mastered ? 'bg-green-50 border-green-200 text-green-500' : 'bg-white border-slate-200 text-slate-300 hover:border-green-200 hover:text-green-500'}`}
                                 >
                                     {word.mastered ? <CheckCircle className="w-5 h-5" /> : <Circle className="w-5 h-5" />}

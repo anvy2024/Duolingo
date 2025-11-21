@@ -22,8 +22,11 @@ export type GenerationTopic = 'general' | 'common-verbs' | 'irregular-verbs';
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
 
 export const generateVocabularyBatch = async (existingWords: string[] = [], topic: GenerationTopic = 'general', lang: Language): Promise<VocabularyWord[]> => {
-  // Limit existing words sent to model to save tokens, but pick a random sample to avoid repetition patterns
-  const sampleExisting = existingWords.sort(() => 0.5 - Math.random()).slice(100).join(", ");
+  // IMPROVED: Send a larger, shuffled sample of existing words to the model to avoid repetition
+  // We prioritize sending the most recently learned words + a random sample of older ones
+  const recentWords = existingWords.slice(-50);
+  const olderWords = existingWords.slice(0, -50).sort(() => 0.5 - Math.random()).slice(0, 150);
+  const sampleExisting = [...recentWords, ...olderWords].join(", ");
   
   const modelId = "gemini-2.5-flash";
   
@@ -47,7 +50,7 @@ export const generateVocabularyBatch = async (existingWords: string[] = [], topi
   } else if (topic === 'irregular-verbs') {
     specificInstruction = `Generate 10 common irregular ${targetLang} verbs for ${level} students.`;
   } else {
-    specificInstruction = `Generate 10 distinct, useful ${targetLang} vocabulary words suitable for ${level} level (mix of nouns, verbs, adjectives).`;
+    specificInstruction = `Generate 10 DISTINCT, useful ${targetLang} vocabulary words suitable for ${level} level (mix of nouns, verbs, adjectives).`;
   }
 
   // Logic for Vietnamese Pronunciation
@@ -67,6 +70,9 @@ export const generateVocabularyBatch = async (existingWords: string[] = [], topi
     You are an expert ${targetLang} teacher for Vietnamese students.
     ${specificInstruction}
     
+    CRITICAL RULE: DO NOT include any words from this list: [${sampleExisting}].
+    I need COMPLETELY NEW words.
+    
     Requirements:
     1. Word must be in ${targetLang} (${level} difficulty).
     2. Provide meaning in Vietnamese.
@@ -75,7 +81,7 @@ export const generateVocabularyBatch = async (existingWords: string[] = [], topi
     5. Simple example sentence suited for ${level}.
     6. Vietnamese translation of the sentence.
     ${sentencePronunciationInstruction}
-    8. Ensure the words are NOT in this list: [${sampleExisting}]
+    8. STRICTLY CHECK the exclude list. If a word is in [${sampleExisting}], DO NOT generate it.
     
     Return ONLY valid JSON array.
   `;

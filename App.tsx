@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppMode, VocabularyWord, Language, NewsArticle } from './types';
 import { generateVocabularyBatch, getHighQualityAudio, GenerationTopic, generateCanadianNews } from './services/geminiService';
-import { loadVocabularyData, appendVocabulary, updateWordStatus, removeVocabularyWord, getRawDataForExport, importDataFromJson, loadNewsData, appendNewsData, deleteNewsArticle } from './services/storageService';
+import { loadVocabularyData, appendVocabulary, updateWordStatus, removeVocabularyWord, getRawDataForExport, importDataFromJson, loadNewsData, appendNewsData, deleteNewsArticle, editVocabularyWord } from './services/storageService';
 import { Dashboard } from './components/Dashboard';
 import { StudyList } from './components/StudyList';
 import { Flashcard } from './components/Flashcard';
@@ -26,7 +27,10 @@ export default function App() {
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
+  // REFS FOR AUDIO ENGINE
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const audioTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [loading, setLoading] = useState(false);
@@ -59,6 +63,19 @@ export default function App() {
     };
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
+    
+    // Initialize the persistent Audio object
+    if (!currentAudioRef.current) {
+        currentAudioRef.current = new Audio();
+    }
+    
+    return () => {
+        if (currentAudioRef.current) {
+            currentAudioRef.current.pause();
+            currentAudioRef.current.src = "";
+        }
+        if (audioTimeoutRef.current) clearTimeout(audioTimeoutRef.current);
+    }
   }, []);
 
   const playAudioSource = (url: string, speed: number) => {
@@ -67,12 +84,10 @@ export default function App() {
 
       if (currentAudioRef.current) {
           currentAudioRef.current.pause();
-          currentAudioRef.current.currentTime = 0;
+          currentAudioRef.current.src = url;
+          currentAudioRef.current.playbackRate = speed;
+          currentAudioRef.current.play().catch(e => console.error("Audio play failed:", e));
       }
-      const audio = new Audio(url);
-      audio.playbackRate = speed;
-      audio.play().catch(e => console.error("Audio play failed:", e));
-      currentAudioRef.current = audio;
   };
 
   const toggleSpeed = () => {
@@ -89,6 +104,9 @@ export default function App() {
   const speakNative = useCallback((text: string, onEnd?: () => void) => {
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
+        
+        // Keep ref to prevent garbage collection
+        utteranceRef.current = utterance;
         
         if (selectedLang === 'fr') utterance.lang = 'fr-FR';
         else if (selectedLang === 'en') utterance.lang = 'en-US';
@@ -109,16 +127,29 @@ export default function App() {
             utterance.voice = preferredVoice;
         }
 
-        utterance.onend = () => {
+        // Safely handle onEnd
+        let ended = false;
+        const handleEnd = () => {
+            if (ended) return;
+            ended = true;
+            utteranceRef.current = null; // Release ref
             if (onEnd) onEnd();
         };
-        
+
+        utterance.onend = handleEnd;
         utterance.onerror = (e) => {
             console.error("Native TTS Error", e);
-            if (onEnd) onEnd(); // Continue anyway
+            handleEnd(); 
         };
 
         window.speechSynthesis.speak(utterance);
+        
+        // Backup timeout
+        if (audioTimeoutRef.current) clearTimeout(audioTimeoutRef.current);
+        audioTimeoutRef.current = setTimeout(() => {
+            if (!ended) handleEnd();
+        }, (text.length * 200) + 2000); 
+
   }, [selectedLang, playbackSpeed]);
 
   // 2. Smart Speak Fast (Google TTS for iOS + Fallback)
@@ -127,56 +158,69 @@ export default function App() {
         if (onEnd) onEnd();
         return;
     }
-
-    // Stop current audio
-    if (currentAudioRef.current) {
-        currentAudioRef.current.pause();
-        currentAudioRef.current.currentTime = 0;
-    }
+    
+    // Cancel any ongoing native speech
     window.speechSynthesis.cancel();
+    if (audioTimeoutRef.current) clearTimeout(audioTimeoutRef.current);
 
-    // Detect iOS
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-                  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    let tl = 'fr';
+    if (selectedLang === 'en') tl = 'en';
+    else if (selectedLang === 'zh') tl = 'zh-CN';
+    else if (selectedLang === 'es') tl = 'es';
 
-    // Use Google TTS on iOS because native iOS voices are often robotic/poor for learners
-    if (isIOS) {
-        let tl = 'fr';
-        if (selectedLang === 'en') tl = 'en';
-        else if (selectedLang === 'zh') tl = 'zh-CN';
-        else if (selectedLang === 'es') tl = 'es';
-
-        // Use googleapis.com (more reliable) with client=gtx
-        // IMPORTANT: index.html must have <meta name="referrer" content="no-referrer">
-        const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&q=${encodeURIComponent(text)}&tl=${tl}`;
-        
-        const audio = new Audio(url);
-        audio.playbackRate = playbackSpeed;
-        
-        audio.onended = () => {
-            if (onEnd) onEnd();
-        };
-
-        // CRITICAL: Fallback to native if Google TTS fails (Network error, 403, etc.)
-        const handleFallback = () => {
-            console.warn("Google TTS failed/blocked, falling back to native speech.");
-            speakNative(text, onEnd);
-        };
-
-        audio.onerror = handleFallback;
-
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-            playPromise.catch(e => {
-                console.warn("Audio play promise rejected", e);
-                handleFallback();
-            });
-        }
-        currentAudioRef.current = audio;
-    } else {
-        // On Desktop/Android, Chrome's native TTS is usually excellent and instant
-        speakNative(text, onEnd);
+    // Use googleapis.com
+    const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&q=${encodeURIComponent(text)}&tl=${tl}`;
+    
+    // Ensure we have the audio object
+    if (!currentAudioRef.current) {
+        currentAudioRef.current = new Audio();
     }
+    const audio = currentAudioRef.current;
+
+    // Cleanup previous listeners before adding new ones
+    let ended = false;
+    const handleEnd = () => {
+        if (ended) return;
+        ended = true;
+        if (audioTimeoutRef.current) clearTimeout(audioTimeoutRef.current);
+        if (onEnd) onEnd();
+    };
+
+    audio.pause();
+    audio.currentTime = 0;
+    audio.src = url;
+    audio.playbackRate = playbackSpeed;
+    
+    // Important for mobile stability
+    audio.load();
+
+    audio.onended = handleEnd;
+    
+    audio.onerror = (e) => {
+        console.warn("Google TTS failed/blocked, falling back to native.", e);
+        // Don't call handleEnd here, let speakNative handle it
+        speakNative(text, onEnd);
+    };
+
+    // Safety Timeout: If audio doesn't finish (or start) within reasonable time, force next
+    // This prevents the loop from getting stuck forever
+    const estimatedDuration = Math.max(2000, text.length * 150);
+    audioTimeoutRef.current = setTimeout(() => {
+        if (!ended) {
+            console.log("Audio timeout forced");
+            handleEnd();
+        }
+    }, estimatedDuration);
+
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+        playPromise.catch(e => {
+            console.warn("Audio play promise rejected (likely interaction policy or network)", e);
+            // If autoplay is blocked, we MUST fallback or skip
+            speakNative(text, onEnd);
+        });
+    }
+
   }, [selectedLang, playbackSpeed, speakNative]);
 
   const speakAI = useCallback(async (text: string) => {
@@ -194,7 +238,6 @@ export default function App() {
         playAudioSource(url, playbackSpeed);
     } catch (err) {
         console.error("AI Audio playback error", err);
-        // Fallback to fast speak if AI fails
         speakFast(text);
     } finally {
         setAiAudioLoading(false);
@@ -208,11 +251,25 @@ export default function App() {
     setError(null);
     setMode(AppMode.GENERATING);
     try {
+      // Get ALL existing words to filter against
       const existingWords = vocab.map(v => v.target);
-      const newWords = await generateVocabularyBatch(existingWords, topic, selectedLang);
-      const updatedVocab = appendVocabulary(newWords, selectedLang);
+      const generatedWords = await generateVocabularyBatch(existingWords, topic, selectedLang);
+      
+      // CRITICAL: Strict Duplication Check
+      // Normalize: trim and lowercase to compare
+      const distinctNewWords = generatedWords.filter(nw => {
+          const normalizedNew = nw.target.trim().toLowerCase();
+          // Check against all existing words in the entire dictionary
+          return !vocab.some(existing => existing.target.trim().toLowerCase() === normalizedNew);
+      });
+
+      if (distinctNewWords.length === 0) {
+          throw new Error("AI generated words that you already know. I filtered them out. Please try again, I will try harder!");
+      }
+
+      const updatedVocab = appendVocabulary(distinctNewWords, selectedLang);
       setVocab(updatedVocab);
-      setCurrentBatch(newWords);
+      setCurrentBatch(distinctNewWords);
       
       // Dynamic Title
       const t = TRANSLATIONS[selectedLang];
@@ -222,9 +279,9 @@ export default function App() {
       setStudyListTitle(title);
       
       setMode(AppMode.STUDY_LIST);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setError("Error generating words. Please try again.");
+      setError(err.message || "Error generating words. Please try again.");
       setMode(AppMode.DASHBOARD);
     } finally {
       setLoading(false);
@@ -264,13 +321,32 @@ export default function App() {
       setVocab(updatedVocab);
   };
 
+  const handleEditWord = (updatedWord: VocabularyWord) => {
+      if (!selectedLang) return;
+      const updatedVocab = editVocabularyWord(updatedWord.id, updatedWord, selectedLang);
+      setVocab(updatedVocab);
+      
+      if (currentBatch.some(w => w.id === updatedWord.id)) {
+          setCurrentBatch(prev => prev.map(w => w.id === updatedWord.id ? updatedWord : w));
+      }
+  };
+
+  const handleDeleteWord = (id: string) => {
+      if (!selectedLang) return;
+      const updated = removeVocabularyWord(id, selectedLang);
+      setVocab(updated);
+      if (currentBatch.some(w => w.id === id)) {
+          setCurrentBatch(prev => prev.filter(w => w.id !== id));
+      }
+  };
+
   const handleStartReview = () => {
     if (vocab.length === 0 || !selectedLang) return;
     const shuffled = [...vocab].sort(() => 0.5 - Math.random());
     const selected = shuffled.slice(0, 20);
     setCurrentBatch(selected);
     setStudyListTitle(TRANSLATIONS[selectedLang].review);
-    setMode(AppMode.STUDY_LIST); // GO TO LIST FIRST FOR AUTOPLAY
+    setMode(AppMode.STUDY_LIST); 
   };
 
   const handleStartFavorites = () => {
@@ -280,7 +356,7 @@ export default function App() {
       const shuffled = [...favorites].sort(() => 0.5 - Math.random());
       setCurrentBatch(shuffled);
       setStudyListTitle(TRANSLATIONS[selectedLang].favorites);
-      setMode(AppMode.STUDY_LIST); // GO TO LIST FIRST FOR AUTOPLAY
+      setMode(AppMode.STUDY_LIST); 
   }
 
   const handleStartMastered = () => {
@@ -290,442 +366,240 @@ export default function App() {
     const shuffled = [...mastered].sort(() => 0.5 - Math.random());
     setCurrentBatch(shuffled);
     setStudyListTitle(TRANSLATIONS[selectedLang].mastered);
-    setMode(AppMode.STUDY_LIST); // GO TO LIST FIRST FOR AUTOPLAY
-  }
-
-  const handleToggleMastered = (id: string, currentStatus: boolean) => {
-    if (!selectedLang) return;
-    const newStatus = !currentStatus;
-    // Update current batch
-    const updatedBatch = currentBatch.map(w => 
-        w.id === id ? { ...w, mastered: newStatus } : w
-    );
-    setCurrentBatch(updatedBatch);
-    // Update global vocab & storage
-    const newVocab = updateWordStatus(id, { mastered: newStatus }, selectedLang);
-    setVocab(newVocab);
+    setMode(AppMode.STUDY_LIST); 
   };
-  
-  const handleToggleFavorite = (id: string, currentStatus: boolean) => {
+
+  const handleToggleMastered = (id: string, status: boolean) => {
       if (!selectedLang) return;
-      const newStatus = !currentStatus;
-      const updatedBatch = currentBatch.map(w => 
-          w.id === id ? { ...w, isFavorite: newStatus } : w
-      );
-      setCurrentBatch(updatedBatch);
-      const newVocab = updateWordStatus(id, { isFavorite: newStatus }, selectedLang);
-      setVocab(newVocab);
-  }
-  
-  const handleDeleteWord = (id: string) => {
-      if (!selectedLang) return;
-      const updatedVocab = removeVocabularyWord(id, selectedLang);
-      setVocab(updatedVocab);
-      setCurrentBatch(prev => prev.filter(w => w.id !== id));
-  };
-
-  const handleViewList = () => {
-    setMode(AppMode.VOCAB_LIST);
-  };
-
-  const startFlashcards = () => {
-    setFlashcardIndex(0);
-    setMode(AppMode.FLASHCARD);
-  };
-
-  const nextCard = () => {
-    if (flashcardIndex < currentBatch.length - 1) {
-      setFlashcardIndex(prev => prev + 1);
-    } else {
-      finishSession();
-    }
-  };
-
-  const prevCard = () => {
-    if (flashcardIndex > 0) {
-      setFlashcardIndex(prev => prev - 1);
-    }
-  };
-
-  const finishSession = () => {
-    setMode(AppMode.COMPLETE);
-  };
-
-  // Export/Import
-  const handleExport = () => {
-      if (!selectedLang) return;
-      const dataStr = getRawDataForExport(selectedLang);
-      const blob = new Blob([dataStr], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.download = `${selectedLang}_vocab_data_${new Date().toISOString().slice(0, 10)}.json`;
-      link.href = url;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-  };
-
-  const handleImportClick = () => {
-      if (fileInputRef.current) {
-          fileInputRef.current.click();
+      const updated = updateWordStatus(id, { mastered: status }, selectedLang);
+      setVocab(updated);
+      if (currentBatch.some(w => w.id === id)) {
+           setCurrentBatch(prev => prev.map(w => w.id === id ? { ...w, mastered: status } : w));
       }
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleToggleFavorite = (id: string, status: boolean) => {
       if (!selectedLang) return;
-      const file = event.target.files?.[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = (e) => {
-          const text = e.target?.result as string;
-          if (text) {
-              const success = importDataFromJson(text, selectedLang);
-              if (success) {
-                  alert("Data imported successfully!");
-                  refreshData();
-                  setIsSettingsOpen(false);
-              } else {
-                  alert("Invalid file.");
-              }
-          }
-      };
-      reader.readAsText(file);
-      event.target.value = ''; 
+      const updated = updateWordStatus(id, { isFavorite: status }, selectedLang);
+      setVocab(updated);
+      if (currentBatch.some(w => w.id === id)) {
+           setCurrentBatch(prev => prev.map(w => w.id === id ? { ...w, isFavorite: status } : w));
+      }
   };
-  
-  const generalVocabCount = vocab.filter(v => v.category === 'general' || !v.category).length;
-  const masteredCount = vocab.filter(v => v.mastered).length;
-  const favoriteCount = vocab.filter(v => v.isFavorite).length;
-
-  const t = selectedLang ? TRANSLATIONS[selectedLang] : null;
 
   return (
-    <div className="h-[100dvh] bg-gray-100 text-slate-700 flex flex-col overflow-hidden font-sans">
-      {/* Global Loading */}
+    <div className="h-[100dvh] overflow-hidden bg-gray-100 flex flex-col font-sans text-slate-700">
+      
       {loading && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex flex-col items-center justify-center text-center px-4">
-          <Loader2 className="w-12 h-12 text-white animate-spin mb-4" />
-          <p className="text-white font-bold text-lg animate-pulse">AI Processing...</p>
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center text-white">
+            <Loader2 className="w-16 h-16 animate-spin mb-4 text-sky-400" />
+            <p className="text-2xl font-black tracking-wide animate-pulse">
+                {mode === AppMode.GENERATING ? 'AI is thinking...' : 'Loading...'}
+            </p>
+            {mode === AppMode.GENERATING && (
+                <p className="text-sm text-white/70 mt-2 max-w-xs text-center">Creating unique vocabulary for you...</p>
+            )}
         </div>
-      )}
-
-      {/* Error */}
-      {error && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-rose-100 border-2 border-rose-500 text-rose-600 px-6 py-4 rounded-2xl z-50 shadow-xl font-bold">
-          <p>{error}</p>
-          <button onClick={() => setError(null)} className="text-sm underline mt-2 hover:text-rose-800 block text-center w-full">Close</button>
-        </div>
-      )}
-
-      {/* LANGUAGE SELECTION SCREEN */}
-      {mode === AppMode.LANGUAGE_SELECT && (
-        <div className="flex flex-col h-full bg-gray-100 p-6 items-center justify-center animate-in fade-in duration-500 overflow-y-auto">
-            <div className="mb-6 text-center shrink-0">
-                <div className="bg-green-500 w-24 h-24 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl rotate-3 border-b-[6px] border-green-600">
-                    <Globe className="w-12 h-12 text-white" />
-                </div>
-                <h1 className="text-3xl font-black text-slate-700 mb-1">Dualingo AI</h1>
-                <p className="text-slate-500 font-bold text-base">Master a new language with AI</p>
-            </div>
-
-            <div className="w-full max-w-md space-y-3 pb-6">
-                 {/* 1. FRENCH */}
-                 <button 
-                    onClick={() => setSelectedLang('fr')}
-                    className="w-full group relative bg-white border-2 border-slate-200 border-b-4 rounded-3xl p-5 flex items-center gap-4 hover:bg-slate-50 active:border-b-2 active:translate-y-[2px] transition-all"
-                >
-                    <div className="w-16 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm overflow-hidden border border-slate-200">
-                        <div className="w-1/3 h-full bg-blue-600"></div>
-                        <div className="w-1/3 h-full bg-white"></div>
-                        <div className="w-1/3 h-full bg-red-600"></div>
-                    </div>
-                    <div className="text-left flex-1">
-                        <h2 className="text-xl font-extrabold text-slate-700">Français</h2>
-                        <p className="text-slate-400 font-bold text-xs">Level A1 (Débutant)</p>
-                    </div>
-                     <ChevronRight className="w-6 h-6 text-slate-300 group-hover:text-slate-400" />
-                </button>
-
-                {/* 2. ENGLISH */}
-                <button 
-                    onClick={() => setSelectedLang('en')}
-                    className="w-full group relative bg-white border-2 border-slate-200 border-b-4 rounded-3xl p-5 flex items-center gap-4 hover:bg-slate-50 active:border-b-2 active:translate-y-[2px] transition-all"
-                >
-                    <div className="w-16 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-sm overflow-hidden relative border border-slate-200">
-                         <div className="absolute inset-0 flex">
-                            <div className="w-full h-full bg-blue-700 flex items-center justify-center text-white font-bold text-xs">US/UK</div>
-                        </div>
-                    </div>
-                    <div className="text-left flex-1">
-                        <h2 className="text-xl font-extrabold text-slate-700">English</h2>
-                        <p className="text-slate-400 font-bold text-xs">Level B1 (Intermediate)</p>
-                    </div>
-                    <ChevronRight className="w-6 h-6 text-slate-300 group-hover:text-slate-400" />
-                </button>
-
-                {/* 3. CHINESE */}
-                <button 
-                    onClick={() => setSelectedLang('zh')}
-                    className="w-full group relative bg-white border-2 border-slate-200 border-b-4 rounded-3xl p-5 flex items-center gap-4 hover:bg-slate-50 active:border-b-2 active:translate-y-[2px] transition-all"
-                >
-                    <div className="w-16 h-12 bg-red-600 rounded-xl flex items-center justify-center shadow-sm overflow-hidden relative border border-slate-200">
-                        <div className="text-yellow-400 font-black text-2xl">五</div>
-                    </div>
-                    <div className="text-left flex-1">
-                        <h2 className="text-xl font-extrabold text-slate-700">中文 (Chinese)</h2>
-                        <p className="text-slate-400 font-bold text-xs">Level A1 (Beginner)</p>
-                    </div>
-                    <ChevronRight className="w-6 h-6 text-slate-300 group-hover:text-slate-400" />
-                </button>
-
-                {/* 4. SPANISH */}
-                <button 
-                    onClick={() => setSelectedLang('es')}
-                    className="w-full group relative bg-white border-2 border-slate-200 border-b-4 rounded-3xl p-5 flex items-center gap-4 hover:bg-slate-50 active:border-b-2 active:translate-y-[2px] transition-all"
-                >
-                    <div className="w-16 h-12 bg-red-600 rounded-xl flex items-center justify-center shadow-sm overflow-hidden relative border border-slate-200">
-                        <div className="w-full h-1/3 bg-yellow-400 absolute top-1/3 flex items-center justify-center"></div>
-                    </div>
-                    <div className="text-left flex-1">
-                        <h2 className="text-xl font-extrabold text-slate-700">Español</h2>
-                        <p className="text-slate-400 font-bold text-xs">Level A1 (Beginner)</p>
-                    </div>
-                    <ChevronRight className="w-6 h-6 text-slate-300 group-hover:text-slate-400" />
-                </button>
-            </div>
-
-            <p className="mt-4 text-slate-400 font-bold text-xs">Hana Minh Tran • Dualingo AI</p>
-        </div>
-      )}
-
-      {/* DASHBOARD */}
-      {mode === AppMode.DASHBOARD && selectedLang && (
-        <Dashboard 
-            totalLearned={generalVocabCount} 
-            masteredCount={masteredCount}
-            favoriteCount={favoriteCount}
-            currentLang={selectedLang}
-            onStartNew={handleStartNew}
-            onStartReview={handleStartReview}
-            onStartFavorites={handleStartFavorites}
-            onStartMastered={handleStartMastered}
-            onViewList={handleViewList}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-            onOpenNews={handleOpenNews}
-            onSwitchLang={() => setSelectedLang(null)}
-        />
       )}
       
-      {/* NEWS READER */}
-      {mode === AppMode.NEWS_READER && selectedLang && (
-          <NewsReader 
-            articles={newsArticles}
-            onBack={() => setMode(AppMode.DASHBOARD)}
-            loading={loading}
-            aiLoading={aiAudioLoading}
-            speakFast={speakFast}
-            speakAI={speakAI}
-            currentLang={selectedLang}
-            onAddWord={handleAddWord}
-            onLoadMore={handleFetchMoreNews}
-            onDeleteArticle={handleDeleteNews}
-            playbackSpeed={playbackSpeed}
-            onToggleSpeed={toggleSpeed}
-          />
-      )}
-
-      {/* VOCAB LIST */}
-      {mode === AppMode.VOCAB_LIST && selectedLang && (
-          <div className="flex-1 overflow-hidden flex flex-col h-full">
-            <VocabularyList 
-                words={vocab} 
-                currentLang={selectedLang}
-                onBack={() => setMode(AppMode.DASHBOARD)}
-                speakFast={speakFast}
-                speakAI={speakAI}
-                aiLoading={aiAudioLoading}
-                onDelete={handleDeleteWord}
-                onToggleMastered={handleToggleMastered}
-                onToggleFavorite={handleToggleFavorite}
-                playbackSpeed={playbackSpeed}
-                onToggleSpeed={toggleSpeed}
-                onAddWord={handleAddWord}
-            />
+      {error && (
+          <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-rose-500 text-white px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 max-w-xs mx-auto">
+              <AlertTriangle className="w-6 h-6 shrink-0" />
+              <p className="font-bold text-sm">{error}</p>
+              <button onClick={() => setError(null)} className="ml-auto"><X className="w-5 h-5" /></button>
           </div>
       )}
 
-      {/* STUDY LIST */}
+      {mode === AppMode.LANGUAGE_SELECT && (
+          <div className="flex flex-col items-center justify-center h-full p-6 space-y-8 bg-white">
+              <div className="text-center space-y-2">
+                   <div className="bg-sky-100 p-4 rounded-3xl inline-block mb-2">
+                        <Globe className="w-12 h-12 text-sky-500" />
+                   </div>
+                   <h1 className="text-3xl font-black text-slate-800">Duolingo AI</h1>
+                   <p className="text-slate-400 font-bold">Choose your target language</p>
+              </div>
+              
+              <div className="grid grid-cols-1 gap-4 w-full max-w-xs">
+                  <button onClick={() => setSelectedLang('fr')} className="flex items-center gap-4 p-4 bg-white border-2 border-blue-200 hover:bg-blue-50 rounded-2xl transition-all active:scale-95 shadow-sm group">
+                      <span className="text-3xl">🇫🇷</span>
+                      <div className="text-left">
+                          <div className="font-black text-slate-700 group-hover:text-blue-600">French</div>
+                          <div className="text-xs font-bold text-slate-400">A1 Beginner</div>
+                      </div>
+                  </button>
+                  <button onClick={() => setSelectedLang('en')} className="flex items-center gap-4 p-4 bg-white border-2 border-blue-200 hover:bg-blue-50 rounded-2xl transition-all active:scale-95 shadow-sm group">
+                      <span className="text-3xl">🇺🇸</span>
+                      <div className="text-left">
+                          <div className="font-black text-slate-700 group-hover:text-blue-600">English</div>
+                          <div className="text-xs font-bold text-slate-400">B1 Intermediate</div>
+                      </div>
+                  </button>
+                  <button onClick={() => setSelectedLang('zh')} className="flex items-center gap-4 p-4 bg-white border-2 border-red-200 hover:bg-red-50 rounded-2xl transition-all active:scale-95 shadow-sm group">
+                      <span className="text-3xl">🇨🇳</span>
+                      <div className="text-left">
+                          <div className="font-black text-slate-700 group-hover:text-red-600">Chinese</div>
+                          <div className="text-xs font-bold text-slate-400">A1 Beginner</div>
+                      </div>
+                  </button>
+                  <button onClick={() => setSelectedLang('es')} className="flex items-center gap-4 p-4 bg-white border-2 border-yellow-200 hover:bg-yellow-50 rounded-2xl transition-all active:scale-95 shadow-sm group">
+                      <span className="text-3xl">🇪🇸</span>
+                      <div className="text-left">
+                          <div className="font-black text-slate-700 group-hover:text-yellow-600">Spanish</div>
+                          <div className="text-xs font-bold text-slate-400">A1 Beginner</div>
+                      </div>
+                  </button>
+              </div>
+          </div>
+      )}
+
+      {mode === AppMode.DASHBOARD && selectedLang && (
+        <Dashboard 
+          totalLearned={vocab.length}
+          masteredCount={vocab.filter(w => w.mastered).length}
+          favoriteCount={vocab.filter(w => w.isFavorite).length}
+          currentLang={selectedLang}
+          onStartNew={handleStartNew}
+          onStartReview={handleStartReview}
+          onStartFavorites={handleStartFavorites}
+          onStartMastered={handleStartMastered}
+          onViewList={() => setMode(AppMode.VOCAB_LIST)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenNews={handleOpenNews}
+          onSwitchLang={() => setSelectedLang(null)}
+        />
+      )}
+
       {mode === AppMode.STUDY_LIST && selectedLang && (
-        <div className="flex flex-col h-full overflow-hidden bg-gray-100">
-            <StudyList 
-                words={currentBatch} 
-                title={studyListTitle}
-                onComplete={startFlashcards} 
-                onBackToHome={() => setMode(AppMode.DASHBOARD)}
-                speakFast={speakFast}
-                speakAI={speakAI}
-                aiLoading={aiAudioLoading}
-                currentLang={selectedLang}
-                onToggleMastered={handleToggleMastered}
-                onToggleFavorite={handleToggleFavorite}
-                playbackSpeed={playbackSpeed}
-            />
-        </div>
+        <StudyList 
+          words={currentBatch}
+          title={studyListTitle}
+          onComplete={() => setMode(AppMode.DASHBOARD)}
+          onBackToHome={() => setMode(AppMode.DASHBOARD)}
+          speakFast={speakFast}
+          speakAI={speakAI}
+          aiLoading={aiAudioLoading}
+          currentLang={selectedLang}
+          onToggleMastered={handleToggleMastered}
+          onToggleFavorite={handleToggleFavorite}
+          playbackSpeed={playbackSpeed}
+        />
       )}
 
-      {/* FLASHCARDS */}
-      {mode === AppMode.FLASHCARD && t && (
-        <div className="flex flex-col h-full max-w-lg mx-auto w-full overflow-hidden bg-gray-100">
-            <div className="p-4 flex justify-between items-center shrink-0">
-                 <button onClick={() => setMode(AppMode.DASHBOARD)} className="text-slate-400 hover:text-slate-600 p-2">
-                    <X className="w-6 h-6" />
-                </button>
-                
-                <div className="flex-1 mx-4">
-                    <div className="w-full h-4 bg-slate-200 rounded-full overflow-hidden">
-                         <div 
-                            className="h-full bg-green-500 transition-all duration-500 ease-out rounded-full"
-                            style={{ width: `${((flashcardIndex + 1) / currentBatch.length) * 100}%` }}
-                        />
-                    </div>
-                </div>
-                
-                <button 
-                    onClick={toggleSpeed}
-                    className="w-8 h-8 flex items-center justify-center bg-slate-200 text-slate-500 rounded-lg text-xs font-bold hover:bg-slate-300"
-                >
-                    {playbackSpeed}x
-                </button>
-            </div>
-            
-            <div className="flex-1 flex flex-col justify-center px-4 overflow-y-auto py-2 custom-scrollbar">
-                <Flashcard 
-                    word={currentBatch[flashcardIndex]} 
-                    speakFast={speakFast}
-                    speakAI={speakAI}
-                    aiLoading={aiAudioLoading}
-                    onToggleMastered={handleToggleMastered}
-                    onToggleFavorite={handleToggleFavorite}
-                />
-            </div>
-
-            <div className="p-6 grid grid-cols-2 gap-4 shrink-0 bg-gray-100 border-t-2 border-slate-200 pb-10 lg:pb-6">
-                <button 
-                    onClick={prevCard}
-                    disabled={flashcardIndex === 0}
-                    className="flex items-center justify-center gap-2 py-3.5 rounded-2xl font-extrabold text-slate-400 border-2 border-slate-200 border-b-4 hover:bg-slate-200 active:border-b-0 active:translate-y-1 disabled:opacity-50 disabled:active:translate-y-0 disabled:active:border-b-4 transition-all uppercase tracking-wide"
-                >
-                    <ChevronLeft className="w-5 h-5" />
-                    {t.prev}
-                </button>
-                <button 
-                    onClick={nextCard}
-                    className="flex items-center justify-center gap-2 py-3.5 rounded-2xl font-extrabold text-white bg-green-500 border-green-600 border-b-4 hover:bg-green-400 active:border-b-0 active:translate-y-1 transition-all uppercase tracking-wide"
-                >
-                    {flashcardIndex === currentBatch.length - 1 ? t.complete : t.next}
-                    {flashcardIndex < currentBatch.length - 1 ? <ChevronRight className="w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
-                </button>
-            </div>
-        </div>
+      {mode === AppMode.VOCAB_LIST && selectedLang && (
+          <VocabularyList 
+            words={vocab}
+            currentLang={selectedLang}
+            onBack={() => setMode(AppMode.DASHBOARD)}
+            speakFast={speakFast}
+            speakAI={speakAI}
+            aiLoading={aiAudioLoading}
+            onDelete={handleDeleteWord}
+            onToggleMastered={handleToggleMastered}
+            onToggleFavorite={handleToggleFavorite}
+            playbackSpeed={playbackSpeed}
+            onToggleSpeed={toggleSpeed}
+            onAddWord={handleAddWord}
+            onEditWord={handleEditWord}
+          />
       )}
 
-      {/* COMPLETE */}
-      {mode === AppMode.COMPLETE && t && (
-         <div className="flex flex-col items-center justify-center h-full p-8 text-center animate-in fade-in zoom-in duration-500 overflow-y-auto bg-gray-100">
-            <div className="mb-8 relative">
-                <div className="absolute inset-0 bg-yellow-200 rounded-full blur-3xl opacity-50"></div>
-                <CheckCircle className="w-24 h-24 text-yellow-400 relative z-10" />
-            </div>
-            
-            <h2 className="text-3xl font-black text-slate-700 mb-4">{t.excellent}</h2>
-            <p className="text-slate-400 font-medium text-lg mb-12">{t.lessonComplete}</p>
-            
-            <div className="grid grid-cols-2 gap-4 w-full max-w-xs mb-12">
-                <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
-                     <p className="text-xs text-slate-400 font-extrabold uppercase">{t.totalWords}</p>
-                     <p className="text-2xl font-black text-slate-700">{currentBatch.length}</p>
-                </div>
-                 <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
-                     <p className="text-xs text-slate-400 font-extrabold uppercase">{t.mastered}</p>
-                     <p className="text-2xl font-black text-green-500">{currentBatch.filter(w => w.mastered).length}</p>
-                </div>
-            </div>
-
-            <div className="space-y-4 w-full max-w-xs">
-                <button 
-                    onClick={handleStartReview}
-                    className="w-full py-4 bg-white border-2 border-slate-200 border-b-4 text-slate-500 rounded-2xl font-extrabold hover:bg-slate-50 active:border-b-0 active:translate-y-1 transition-all uppercase tracking-wider"
-                >
-                    {t.reviewMore}
-                </button>
-                <button 
-                    onClick={() => setMode(AppMode.DASHBOARD)}
-                    className="w-full py-4 bg-green-500 border-green-600 border-b-4 text-white rounded-2xl font-extrabold hover:bg-green-400 active:border-b-0 active:translate-y-1 transition-all uppercase tracking-wider"
-                >
-                    {t.continue}
-                </button>
-            </div>
-         </div>
+      {mode === AppMode.NEWS_READER && selectedLang && (
+          <NewsReader 
+              articles={newsArticles}
+              onBack={() => setMode(AppMode.DASHBOARD)}
+              speakFast={speakFast}
+              speakAI={speakAI}
+              loading={loading}
+              aiLoading={aiAudioLoading}
+              currentLang={selectedLang}
+              onAddWord={handleAddWord}
+              onLoadMore={handleFetchMoreNews}
+              onDeleteArticle={handleDeleteNews}
+              playbackSpeed={playbackSpeed}
+              onToggleSpeed={toggleSpeed}
+          />
       )}
 
       {/* SETTINGS MODAL */}
-      {isSettingsOpen && selectedLang && t && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl flex flex-col border-2 border-slate-200">
-                <div className="p-4 border-b-2 border-slate-100 flex justify-between items-center">
-                    <h3 className="text-xl font-extrabold text-slate-700">{t.profile} ({selectedLang.toUpperCase()})</h3>
-                    <button onClick={() => setIsSettingsOpen(false)} className="p-2 bg-slate-100 rounded-xl hover:bg-slate-200 text-slate-500">
-                        <X className="w-6 h-6" />
-                    </button>
-                </div>
-                
-                <div className="p-6 space-y-6">
-                    <div className="bg-sky-50 p-4 rounded-2xl border-2 border-sky-100 flex items-start gap-3">
-                         <AlertTriangle className="w-6 h-6 text-sky-500 shrink-0" />
-                         <p className="text-sm text-sky-600 font-medium">
-                             {t.backupDesc}
-                         </p>
-                    </div>
+      {isSettingsOpen && (
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+              <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border-2 border-slate-200">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-xl font-black text-slate-700">Settings</h3>
+                      <button onClick={() => setIsSettingsOpen(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X className="w-5 h-5 text-slate-500" /></button>
+                  </div>
 
-                    <div className="space-y-3">
-                        <button 
-                            onClick={handleExport}
-                            className="w-full py-4 bg-white text-slate-600 border-2 border-slate-200 border-b-4 rounded-2xl font-extrabold hover:bg-slate-50 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center gap-2 uppercase tracking-wide"
-                        >
-                            <Download className="w-5 h-5" />
-                            {t.downloadData}
-                        </button>
-                        
-                        <button 
-                            onClick={handleImportClick}
-                            className="w-full py-4 bg-white text-slate-600 border-2 border-slate-200 border-b-4 rounded-2xl font-extrabold hover:bg-slate-50 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center gap-2 uppercase tracking-wide"
-                        >
-                            <Upload className="w-5 h-5" />
-                            {t.uploadData}
-                        </button>
-                        <input 
-                            type="file" 
-                            ref={fileInputRef}
-                            className="hidden" 
-                            accept=".json"
-                            onChange={handleFileChange}
-                        />
-                        
-                        <button 
-                            onClick={() => {
-                                setIsSettingsOpen(false);
-                                setSelectedLang(null);
-                            }}
-                            className="w-full py-4 bg-rose-50 text-rose-500 border-2 border-rose-100 border-b-4 rounded-2xl font-extrabold hover:bg-rose-100 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center gap-2 uppercase tracking-wide mt-4"
-                        >
-                            <LogOut className="w-5 h-5" />
-                            {t.changeLang}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
+                  <div className="space-y-4">
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                           <p className="font-bold text-slate-600 mb-2">Audio Speed: {playbackSpeed}x</p>
+                           <div className="flex gap-2">
+                               {[0.75, 1.0, 1.25].map(speed => (
+                                   <button 
+                                    key={speed}
+                                    onClick={() => setPlaybackSpeed(speed)}
+                                    className={`flex-1 py-2 rounded-xl font-bold transition-all ${playbackSpeed === speed ? 'bg-indigo-500 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200'}`}
+                                   >
+                                       {speed}x
+                                   </button>
+                               ))}
+                           </div>
+                      </div>
+
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                          <p className="font-bold text-slate-600 mb-2">Data Management</p>
+                          <div className="grid grid-cols-2 gap-3">
+                              <button 
+                                onClick={() => {
+                                    const data = getRawDataForExport(selectedLang || 'fr');
+                                    const blob = new Blob([data], { type: "application/json" });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = `backup_${selectedLang}_${Date.now()}.json`;
+                                    a.click();
+                                }}
+                                className="flex flex-col items-center justify-center p-3 bg-white border-2 border-slate-200 rounded-xl hover:bg-sky-50 hover:border-sky-200 transition-all"
+                              >
+                                  <Download className="w-6 h-6 text-sky-500 mb-1" />
+                                  <span className="text-xs font-bold text-slate-500">Backup</span>
+                              </button>
+
+                              <button 
+                                onClick={() => fileInputRef.current?.click()}
+                                className="flex flex-col items-center justify-center p-3 bg-white border-2 border-slate-200 rounded-xl hover:bg-green-50 hover:border-green-200 transition-all"
+                              >
+                                  <Upload className="w-6 h-6 text-green-500 mb-1" />
+                                  <span className="text-xs font-bold text-slate-500">Restore</span>
+                              </button>
+                              <input 
+                                type="file" 
+                                ref={fileInputRef}
+                                className="hidden"
+                                accept=".json"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file || !selectedLang) return;
+                                    const reader = new FileReader();
+                                    reader.onload = (ev) => {
+                                        const content = ev.target?.result as string;
+                                        const success = importDataFromJson(content, selectedLang);
+                                        if (success) {
+                                            refreshData();
+                                            alert("Import successful!");
+                                            setIsSettingsOpen(false);
+                                        } else {
+                                            alert("Invalid file format.");
+                                        }
+                                    };
+                                    reader.readAsText(file);
+                                }}
+                              />
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
       )}
     </div>
   );

@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { VocabularyWord, Language } from '../types';
-import { Zap, Sparkles, Search, ArrowLeft, Trash2, X, Heart, CheckCircle, Plus, Save, Loader2, Radio, Gamepad2, Play, HelpCircle, Headphones, Grid, Volume2, Pause, Square, Clock, Shuffle, Filter, Circle } from 'lucide-react';
+import { Zap, Sparkles, Search, ArrowLeft, Trash2, X, Heart, CheckCircle, Plus, Save, Loader2, Gamepad2, Play, HelpCircle, Headphones, Grid, Volume2, Pause, Square, Clock, Circle, Pencil } from 'lucide-react';
 import { Flashcard } from './Flashcard';
 import { generateSingleWordDetails } from '../services/geminiService';
 import { TRANSLATIONS } from '../constants/translations';
@@ -18,6 +19,7 @@ interface VocabularyListProps {
   playbackSpeed: number;
   onToggleSpeed: () => void;
   onAddWord: (word: VocabularyWord) => void;
+  onEditWord: (word: VocabularyWord) => void;
 }
 
 type ViewMode = 'LIST' | 'GAME_MENU' | 'GAME_QUIZ' | 'GAME_AUDIO' | 'GAME_MATCH';
@@ -25,7 +27,7 @@ type FilterType = 'ALL' | 'FAV' | 'MASTERED' | 'VERBS';
 
 export const VocabularyList: React.FC<VocabularyListProps> = ({ 
     words, currentLang, onBack, speakFast, speakAI, aiLoading, onDelete, 
-    onToggleMastered, onToggleFavorite, playbackSpeed, onToggleSpeed, onAddWord 
+    onToggleMastered, onToggleFavorite, playbackSpeed, onToggleSpeed, onAddWord, onEditWord
 }) => {
   const t = TRANSLATIONS[currentLang];
   const [viewMode, setViewMode] = useState<ViewMode>('LIST');
@@ -35,7 +37,10 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   // Filter State
   const [filterType, setFilterType] = useState<FilterType>('ALL');
   
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   
   // Auto Play State
@@ -45,7 +50,19 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   const [currentPlayIndex, setCurrentPlayIndex] = useState(0);
   const [playDelay, setPlayDelay] = useState(2000); // 2000ms = 2s default
   const [showSettings, setShowSettings] = useState(false);
-  const playTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Refs
+  const loopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+      isMountedRef.current = true;
+      return () => {
+          isMountedRef.current = false;
+          if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
+          window.speechSynthesis.cancel();
+      }
+  }, []);
 
   // Form State
   const [newTarget, setNewTarget] = useState('');
@@ -100,18 +117,17 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
       setIsPaused(false);
       setPlayQueue([]);
       setCurrentPlayIndex(0);
+      if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
       window.speechSynthesis.cancel();
-      if (playTimeoutRef.current) clearTimeout(playTimeoutRef.current);
   };
 
   const togglePause = () => {
       if (isPaused) {
           setIsPaused(false);
-          window.speechSynthesis.cancel();
       } else {
           setIsPaused(true);
+          if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
           window.speechSynthesis.cancel();
-          if (playTimeoutRef.current) clearTimeout(playTimeoutRef.current);
       }
   };
 
@@ -132,22 +148,24 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    // Speak Logic Using passed speakFast for Google TTS consistency
-    const speakCurrent = () => {
-        speakFast(word.target, () => {
-            playTimeoutRef.current = setTimeout(() => {
-                setCurrentPlayIndex(prev => prev + 1);
-            }, playDelay);
-        });
+    let hasAdvanced = false;
+
+    const playNext = () => {
+        if (hasAdvanced || !isMountedRef.current || !isAutoPlaying || isPaused) return;
+        hasAdvanced = true;
+        loopTimeoutRef.current = setTimeout(() => {
+             setCurrentPlayIndex(prev => prev + 1);
+        }, playDelay);
     };
 
     // Small delay before speaking to allow scroll to finish visually
-    const startDelay = setTimeout(speakCurrent, 300);
+    const startDelay = setTimeout(() => {
+        speakFast(word.target, playNext);
+    }, 300);
 
     return () => {
         clearTimeout(startDelay);
-        if (playTimeoutRef.current) clearTimeout(playTimeoutRef.current);
-        window.speechSynthesis.cancel();
+        if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
     };
   }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue, speakFast, playDelay]);
 
@@ -276,27 +294,62 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
     }
   };
 
+  const handleEditClick = (e: React.MouseEvent, word: VocabularyWord) => {
+      e.stopPropagation();
+      setEditingId(word.id);
+      setIsEditing(true);
+      
+      // Pre-fill form
+      setNewTarget(word.target);
+      setNewVietnamese(word.vietnamese);
+      setNewIpa(word.ipa);
+      setNewVietPronun(word.viet_pronunciation);
+      setNewExTarget(word.example.target);
+      setNewExViet(word.example.vietnamese);
+      setNewExVietPronun(word.example.viet_pronunciation || '');
+      
+      setIsModalOpen(true);
+  }
+
+  const handleAddClick = () => {
+      setIsEditing(false);
+      setEditingId(null);
+      
+      // Clear form
+      setNewTarget('');
+      setNewVietnamese('');
+      setNewIpa('');
+      setNewVietPronun('');
+      setNewExTarget('');
+      setNewExViet('');
+      setNewExVietPronun('');
+      
+      setIsModalOpen(true);
+  }
+
   const handleCardToggleMastered = (id: string, status: boolean) => {
-    onToggleMastered(id, status);
+    onToggleMastered(id, status); // Fixed logic: Passed status should be THE NEW STATUS
     if (selectedWord && selectedWord.id === id) {
-        setSelectedWord({ ...selectedWord, mastered: !status });
+        setSelectedWord({ ...selectedWord, mastered: status });
     }
   };
 
   const handleListMasterClick = (e: React.MouseEvent, id: string, status: boolean) => {
       e.stopPropagation();
+      // IMPORTANT: Pass the NEW status (inverted), not the current one
       onToggleMastered(id, status);
   };
 
   const handleCardToggleFavorite = (id: string, status: boolean) => {
       onToggleFavorite(id, status);
       if (selectedWord && selectedWord.id === id) {
-          setSelectedWord({ ...selectedWord, isFavorite: !status });
+          setSelectedWord({ ...selectedWord, isFavorite: status });
       }
   }
 
   const handleListFavoriteClick = (e: React.MouseEvent, id: string, status: boolean) => {
       e.stopPropagation();
+      // IMPORTANT: Pass the NEW status (inverted), not the current one
       onToggleFavorite(id, status);
   }
 
@@ -325,10 +378,8 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
           return;
       }
 
-      const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
-
-      const newWord: VocabularyWord = {
-          id: generateId(),
+      const wordData: VocabularyWord = {
+          id: isEditing && editingId ? editingId : Date.now().toString(36) + Math.random().toString(36).substr(2, 9),
           target: newTarget.trim(),
           vietnamese: newVietnamese.trim(),
           ipa: newIpa || '',
@@ -338,22 +389,19 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
               vietnamese: newExViet || newVietnamese.trim(),
               viet_pronunciation: newExVietPronun || ''
           },
-          learnedAt: Date.now(),
+          learnedAt: isEditing && editingId ? (words.find(w => w.id === editingId)?.learnedAt || Date.now()) : Date.now(),
           category: 'general',
-          mastered: false,
-          isFavorite: false
+          mastered: isEditing && editingId ? (words.find(w => w.id === editingId)?.mastered || false) : false,
+          isFavorite: isEditing && editingId ? (words.find(w => w.id === editingId)?.isFavorite || false) : false
       };
 
-      onAddWord(newWord);
-      setIsAddModalOpen(false);
+      if (isEditing) {
+          onEditWord(wordData);
+      } else {
+          onAddWord(wordData);
+      }
       
-      setNewTarget('');
-      setNewVietnamese('');
-      setNewIpa('');
-      setNewVietPronun('');
-      setNewExTarget('');
-      setNewExViet('');
-      setNewExVietPronun('');
+      setIsModalOpen(false);
   };
   
   let placeholder = "Ex: Chat";
@@ -382,7 +430,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
             {viewMode === 'LIST' && (
                 <div className="flex items-center gap-2">
                     {isAutoPlaying ? (
-                        // AUTO PLAY CONTROLS IN HEADER
+                        // AUTO PLAY CONTROLS
                         <div className="flex items-center gap-2 animate-in slide-in-from-right duration-300">
                              <span className="text-xs font-black text-indigo-500 mr-1">
                                 {playQueue.length > 0 ? `${currentPlayIndex + 1}/${playQueue.length}` : '0/0'}
@@ -427,7 +475,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                                 <Gamepad2 className="w-6 h-6" />
                             </button>
                             <button 
-                                onClick={() => setIsAddModalOpen(true)}
+                                onClick={handleAddClick}
                                 className="flex items-center justify-center p-2 bg-green-500 text-white rounded-xl border-green-600 border-b-4 active:border-b-0 active:translate-y-1 transition-all"
                             >
                                 <Plus className="w-6 h-6" />
@@ -438,7 +486,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
             )}
         </div>
         
-        {/* Auto Play Settings Dropdown */}
+        {/* Auto Play Settings */}
         {isAutoPlaying && showSettings && (
             <div className="absolute top-full right-4 mt-2 w-48 bg-white rounded-xl shadow-xl border-2 border-slate-100 p-3 z-30 animate-in slide-in-from-top-2">
                 <div className="flex justify-between items-center mb-2">
@@ -534,9 +582,26 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                                     </p>
                                 </div>
                                 
-                                <div className="flex items-center gap-1 shrink-0">
+                                <div className="flex items-center gap-2 shrink-0">
                                     {!isAutoPlaying && (
                                         <>
+                                            {/* EDIT */}
+                                            <button 
+                                                onClick={(e) => handleEditClick(e, word)}
+                                                className="p-2 rounded-xl text-slate-400 bg-slate-100 border border-slate-200 hover:text-indigo-500 hover:border-indigo-300 transition-colors"
+                                            >
+                                                <Pencil className="w-4 h-4" />
+                                            </button>
+
+                                            {/* FAVORITE (ADDED BACK) */}
+                                            <button 
+                                                onClick={(e) => handleListFavoriteClick(e, word.id, !word.isFavorite)}
+                                                className={`p-2 rounded-xl transition-colors border border-slate-200 hover:border-rose-200 ${word.isFavorite ? 'text-rose-500 bg-rose-50 border-rose-200' : 'text-slate-300 bg-slate-50 hover:text-rose-400'}`}
+                                            >
+                                                <Heart className={`w-4 h-4 ${word.isFavorite ? 'fill-rose-500' : ''}`} />
+                                            </button>
+
+                                            {/* AUDIO */}
                                             <button 
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -546,30 +611,13 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                                             >
                                                 <Zap className="w-5 h-5" />
                                             </button>
-
-                                            <button 
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    speakAI(word.target);
-                                                }}
-                                                disabled={aiLoading}
-                                                className="p-2 rounded-xl text-white bg-sky-400 border-b-2 border-sky-600 hover:bg-sky-500 transition-colors disabled:opacity-50"
-                                            >
-                                                {aiLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                                            </button>
                                             
+                                            {/* MASTERED */}
                                             <button 
-                                                onClick={(e) => handleListMasterClick(e, word.id, !!word.mastered)}
-                                                className={`p-2 rounded-xl transition-colors border-b-2 active:border-b-0 active:translate-y-0.5 ${word.mastered ? 'text-green-500 bg-green-50 border-green-200' : 'text-slate-300 bg-slate-50 border-slate-200 hover:text-green-400'}`}
+                                                onClick={(e) => handleListMasterClick(e, word.id, !word.mastered)}
+                                                className={`p-2 rounded-xl transition-colors border border-slate-200 hover:border-green-200 ${word.mastered ? 'text-green-500 bg-green-50 border-green-200' : 'text-slate-300 bg-slate-50 hover:text-green-400'}`}
                                             >
                                                 {word.mastered ? <CheckCircle className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
-                                            </button>
-
-                                            <button 
-                                                onClick={(e) => handleListFavoriteClick(e, word.id, !!word.isFavorite)}
-                                                className={`p-2 rounded-xl transition-colors border-b-2 active:border-b-0 active:translate-y-0.5 ${word.isFavorite ? 'text-rose-500 bg-rose-50 border-rose-200' : 'text-slate-300 bg-slate-50 border-slate-200 hover:text-rose-400'}`}
-                                            >
-                                                <Heart className={`w-5 h-5 ${word.isFavorite ? 'fill-rose-500' : ''}`} />
                                             </button>
                                         </>
                                     )}
@@ -644,7 +692,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
              </div>
         )}
 
-        {/* 4. ACTIVE GAME: QUIZ & AUDIO */}
+        {/* 4. ACTIVE GAME */}
         {!isGameOver && (viewMode === 'GAME_QUIZ' || viewMode === 'GAME_AUDIO') && gameQuestions.length > 0 && (
             <div className="flex flex-col h-full">
                 <div className="flex justify-between items-center mb-6">
@@ -696,7 +744,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
             </div>
         )}
 
-        {/* 5. ACTIVE GAME: MATCHING */}
+        {/* 5. MATCHING GAME */}
         {!isGameOver && viewMode === 'GAME_MATCH' && gameQuestions.length > 0 && (
              <div className="flex flex-col h-full">
                  <div className="flex justify-between items-center mb-4">
@@ -716,11 +764,9 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                                 className={`aspect-[4/3] perspective-1000 cursor-pointer ${isMatched ? 'opacity-0 pointer-events-none transition-opacity duration-500' : ''}`}
                             >
                                 <div className={`relative w-full h-full transition-transform duration-300 transform-style-3d ${isFlipped ? 'rotate-y-180' : ''}`}>
-                                    {/* Back (Hidden) */}
                                     <div className="absolute w-full h-full bg-indigo-500 rounded-2xl backface-hidden border-b-4 border-indigo-700 flex items-center justify-center">
                                          <Sparkles className="text-white/30 w-8 h-8" />
                                     </div>
-                                    {/* Front (Shown) */}
                                     <div className={`absolute w-full h-full bg-white rounded-2xl backface-hidden rotate-y-180 border-2 border-b-4 flex items-center justify-center p-2 text-center select-none ${isMatched ? 'border-green-500' : 'border-slate-200'}`}>
                                         <span className="font-extrabold text-slate-700 text-sm md:text-base leading-tight">{card.content}</span>
                                     </div>
@@ -734,20 +780,20 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
 
       </div>
 
-      {/* ADD NEW WORD MODAL (Same as before) */}
-      {isAddModalOpen && (
+      {/* ADD/EDIT WORD MODAL */}
+      {isModalOpen && (
          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white w-full max-w-lg sm:rounded-3xl rounded-t-3xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col border-2 border-slate-200">
                 <div className="p-4 border-b-2 border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10 rounded-t-3xl">
-                    <h3 className="text-xl font-extrabold text-slate-700">{t.addWord}</h3>
-                    <button onClick={() => setIsAddModalOpen(false)} className="p-2 bg-slate-100 rounded-xl hover:bg-slate-200">
+                    <h3 className="text-xl font-extrabold text-slate-700">{isEditing ? 'Edit Word' : t.addWord}</h3>
+                    <button onClick={() => setIsModalOpen(false)} className="p-2 bg-slate-100 rounded-xl hover:bg-slate-200">
                         <X className="w-6 h-6 text-slate-400" />
                     </button>
                 </div>
                 
                 <div className="p-6 space-y-5">
                     <div>
-                        <label className="block text-sm font-extrabold text-slate-400 mb-2 uppercase">Word</label>
+                        <label className="block text-sm font-extrabold text-slate-400 mb-2 uppercase">Word (Target)</label>
                         <div className="flex gap-2">
                             <input 
                                 type="text" 
@@ -756,14 +802,17 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                                 value={newTarget}
                                 onChange={(e) => setNewTarget(e.target.value)}
                             />
+                            {/* AI Auto Fill Button - Works for Edit too */}
                             <button 
                                 onClick={handleAutoFill}
                                 disabled={isGenerating || !newTarget}
                                 className="px-4 bg-sky-500 text-white rounded-2xl font-bold border-sky-600 border-b-4 active:border-b-0 active:translate-y-1 hover:bg-sky-400 transition-all disabled:opacity-50 disabled:active:border-b-4 disabled:active:translate-y-0"
+                                title="Auto-fill details with AI"
                             >
                                 {isGenerating ? <Loader2 className="w-6 h-6 animate-spin" /> : <Sparkles className="w-6 h-6" />}
                             </button>
                         </div>
+                        {isEditing && <p className="text-xs text-sky-500 mt-2 font-bold">* Click Sparkles to regenerate meaning if you changed the word.</p>}
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -847,6 +896,16 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                 </div>
                 
                 <div className="mt-6 flex justify-center gap-4">
+                    <button 
+                        onClick={(e) => {
+                            setSelectedWord(null);
+                            handleEditClick(e, selectedWord);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 bg-white text-indigo-500 rounded-xl font-bold border-2 border-slate-200 hover:bg-indigo-50 transition-colors"
+                    >
+                        <Pencil className="w-4 h-4" /> Edit
+                    </button>
+
                      <button 
                         onClick={(e) => handleDelete(e, selectedWord.id)}
                         className="flex items-center gap-2 px-4 py-2 bg-white text-rose-500 rounded-xl font-bold border-2 border-slate-200 hover:bg-rose-50 transition-colors"
