@@ -1120,8 +1120,8 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                 <ChevronLeft className="w-8 h-8" />
             </button>
 
-            <div className="relative w-full max-w-lg cursor-auto animate-in zoom-in duration-300">
-                <div onClick={(e) => e.stopPropagation()}>
+            <div className="relative w-full max-w-lg cursor-auto animate-in zoom-in duration-300 flex flex-col items-center">
+                <div onClick={(e) => e.stopPropagation()} className="w-full">
                     <Flashcard 
                         key={selectedWord.id} // Force re-render on swipe
                         word={selectedWord} 
@@ -1131,25 +1131,26 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                         onToggleMastered={handleCardToggleMastered}
                         onToggleFavorite={handleCardToggleFavorite}
                         currentLang={currentLang}
+                        isViewMode={true} // ADDED isViewMode to constrain height in modal
                     />
                 </div>
                 
-                <div className="mt-8 flex justify-center gap-4" onClick={(e) => e.stopPropagation()}>
+                <div className="mt-4 flex justify-center gap-4 w-full" onClick={(e) => e.stopPropagation()}>
                     <button 
                         onClick={(e) => {
                             setSelectedWordId(null);
                             handleEditClick(e, selectedWord);
                         }}
-                        className="flex items-center gap-2 px-4 py-2 bg-white/10 text-white rounded-xl font-bold border border-white/20 hover:bg-white/20 transition-colors backdrop-blur-md"
+                        className="flex items-center gap-2 px-6 py-3 bg-white/10 text-white rounded-2xl font-bold border border-white/20 hover:bg-white/20 transition-colors backdrop-blur-md"
                     >
-                        <Pencil className="w-4 h-4" /> Edit
+                        <Pencil className="w-5 h-5" /> Edit
                     </button>
 
                      <button 
                         onClick={(e) => handleDelete(e, selectedWord.id)}
-                        className="flex items-center gap-2 px-4 py-2 bg-rose-500/20 text-rose-300 rounded-xl font-bold border border-rose-500/30 hover:bg-rose-500/30 transition-colors backdrop-blur-md"
+                        className="flex items-center gap-2 px-6 py-3 bg-rose-500/20 text-rose-300 rounded-2xl font-bold border border-rose-500/30 hover:bg-rose-500/30 transition-colors backdrop-blur-md"
                     >
-                        <Trash2 className="w-4 h-4" /> {t.delete}
+                        <Trash2 className="w-5 h-5" /> {t.delete}
                     </button>
                 </div>
             </div>
