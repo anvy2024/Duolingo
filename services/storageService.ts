@@ -1,9 +1,29 @@
-
 import { VocabularyWord, Language, NewsArticle } from "../types";
+import { FontSize } from "../App";
 
 const getStorageKey = (lang: Language) => `vocab_data_${lang}_v1`;
 const getNewsStorageKey = (lang: Language) => `news_data_${lang}_v1`;
+const SETTINGS_KEY = 'app_settings_v1';
+const AUDIO_CACHE_KEY = 'audio_cache_v1';
 
+// --- TYPES FOR BACKUP ---
+export interface AppSettings {
+    fontSize: FontSize;
+    playbackSpeed: number;
+    swipeAutoplay: boolean;
+}
+
+export interface FullBackup {
+    version: number;
+    lang: Language;
+    vocab: VocabularyWord[];
+    news: NewsArticle[];
+    audioCache: Record<string, string>; // Text -> Base64 DataURI
+    settings: AppSettings;
+    timestamp: number;
+}
+
+// --- INITIAL DATA ---
 // Initial data for French (A1)
 const INITIAL_DATA_FR: VocabularyWord[] = [
   {
@@ -148,6 +168,8 @@ const INITIAL_DATA_ES: VocabularyWord[] = [
     }
 ];
 
+// --- VOCABULARY FUNCTIONS ---
+
 export const saveVocabularyData = (words: VocabularyWord[], lang: Language): void => {
     try {
         const jsonString = JSON.stringify(words);
@@ -235,27 +257,6 @@ export const removeVocabularyWord = (wordId: string, lang: Language): Vocabulary
     return updatedData;
 }
 
-export const getRawDataForExport = (lang: Language): string => {
-    const data = loadVocabularyData(lang);
-    return JSON.stringify(data, null, 2);
-};
-
-export const importDataFromJson = (jsonString: string, lang: Language): boolean => {
-    try {
-        const parsed = JSON.parse(jsonString);
-        if (!Array.isArray(parsed)) return false;
-        if (parsed.length > 0 && (!parsed[0].target || !parsed[0].vietnamese)) {
-             if (parsed[0].french) return false; 
-             return false;
-        }
-        saveVocabularyData(parsed, lang);
-        return true;
-    } catch (e) {
-        console.error("Invalid JSON for import", e);
-        return false;
-    }
-};
-
 // --- NEWS PERSISTENCE ---
 
 export const loadNewsData = (lang: Language): NewsArticle[] => {
@@ -291,4 +292,141 @@ export const deleteNewsArticle = (id: string, lang: Language): NewsArticle[] => 
     const updated = current.filter(a => a.id !== id);
     saveNewsData(updated, lang);
     return updated;
+};
+
+// --- SETTINGS PERSISTENCE ---
+
+export const saveSettings = (settings: Partial<AppSettings>): void => {
+    try {
+        const current = loadSettings();
+        const updated = { ...current, ...settings };
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(updated));
+    } catch (e) {
+        console.error("Failed to save settings", e);
+    }
+};
+
+export const loadSettings = (): AppSettings => {
+    const DEFAULT_SETTINGS: AppSettings = {
+        fontSize: 'normal',
+        playbackSpeed: 1.0,
+        swipeAutoplay: true
+    };
+    try {
+        const str = localStorage.getItem(SETTINGS_KEY);
+        if (!str) return DEFAULT_SETTINGS;
+        return { ...DEFAULT_SETTINGS, ...JSON.parse(str) };
+    } catch (e) {
+        return DEFAULT_SETTINGS;
+    }
+};
+
+// --- AUDIO CACHE PERSISTENCE ---
+// We use a separate storage key because audio data is large
+
+export const saveAudioCache = (cacheMap: Map<string, string>): void => {
+    try {
+        // Convert Map to Object
+        const obj = Object.fromEntries(cacheMap);
+        const str = JSON.stringify(obj);
+        localStorage.setItem(AUDIO_CACHE_KEY, str);
+    } catch (e) {
+        console.warn("Failed to save audio cache (likely quota exceeded)", e);
+        // Optional: Implement Least Recently Used (LRU) clearing strategy here if needed
+    }
+};
+
+export const loadAudioCache = (): Map<string, string> => {
+    try {
+        const str = localStorage.getItem(AUDIO_CACHE_KEY);
+        if (!str) return new Map();
+        const obj = JSON.parse(str);
+        return new Map(Object.entries(obj));
+    } catch (e) {
+        console.error("Failed to load audio cache", e);
+        return new Map();
+    }
+};
+
+// --- IMPORT / EXPORT FULL BACKUP ---
+
+export const getRawDataForExport = (lang: Language): string => {
+    const vocab = loadVocabularyData(lang);
+    const news = loadNewsData(lang);
+    const settings = loadSettings();
+    const audioCacheMap = loadAudioCache();
+    const audioCacheObj = Object.fromEntries(audioCacheMap);
+
+    const backup: FullBackup = {
+        version: 2,
+        lang: lang,
+        vocab: vocab,
+        news: news,
+        audioCache: audioCacheObj,
+        settings: settings,
+        timestamp: Date.now()
+    };
+
+    return JSON.stringify(backup, null, 2);
+};
+
+export const importDataFromJson = (jsonString: string, lang: Language): boolean => {
+    try {
+        const parsed = JSON.parse(jsonString);
+        
+        // Check format version
+        if (Array.isArray(parsed)) {
+            // OLD FORMAT (Just array of words)
+            if (parsed.length > 0 && (!parsed[0].target && !parsed[0].french)) return false;
+            
+            // Standardize old format if needed
+            const standardized = parsed.map((w: any) => ({
+                 ...w,
+                 target: w.target || w.french,
+                 example: {
+                     ...w.example,
+                     target: w.example?.target || w.example?.french || w.example
+                 }
+            }));
+            
+            const merged = appendVocabulary(standardized, lang);
+            saveVocabularyData(merged, lang);
+            return true;
+        } 
+        else if (parsed.version && parsed.vocab) {
+            // NEW FULL BACKUP FORMAT
+            const backup = parsed as FullBackup;
+            
+            // 1. Merge Vocab
+            if (backup.vocab) {
+                 appendVocabulary(backup.vocab, lang);
+            }
+
+            // 2. Merge News
+            if (backup.news) {
+                 appendNewsData(backup.news, lang);
+            }
+
+            // 3. Merge Audio Cache
+            if (backup.audioCache) {
+                 const currentCache = loadAudioCache();
+                 Object.entries(backup.audioCache).forEach(([key, val]) => {
+                     currentCache.set(key, val as string);
+                 });
+                 saveAudioCache(currentCache);
+            }
+
+            // 4. Merge Settings (Optional - user might want to keep current device settings)
+            if (backup.settings) {
+                saveSettings(backup.settings);
+            }
+
+            return true;
+        }
+        
+        return false;
+    } catch (e) {
+        console.error("Invalid JSON for import", e);
+        return false;
+    }
 };

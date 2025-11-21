@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppMode, VocabularyWord, Language, NewsArticle } from './types';
 import { generateVocabularyBatch, getHighQualityAudio, GenerationTopic, generateCanadianNews } from './services/geminiService';
-import { loadVocabularyData, appendVocabulary, updateWordStatus, removeVocabularyWord, getRawDataForExport, importDataFromJson, loadNewsData, appendNewsData, deleteNewsArticle, editVocabularyWord } from './services/storageService';
+import { loadVocabularyData, appendVocabulary, updateWordStatus, removeVocabularyWord, getRawDataForExport, importDataFromJson, loadNewsData, appendNewsData, deleteNewsArticle, editVocabularyWord, loadSettings, saveSettings, loadAudioCache, saveAudioCache } from './services/storageService';
 import { Dashboard } from './components/Dashboard';
 import { StudyList } from './components/StudyList';
 import { Flashcard } from './components/Flashcard';
@@ -27,10 +27,11 @@ export default function App() {
   // News State
   const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([]);
   
-  // Settings
-  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
-  const [swipeAutoplay, setSwipeAutoplay] = useState(true);
-  const [fontSize, setFontSize] = useState<FontSize>('normal'); // NEW STATE
+  // Settings - Initialize from Storage
+  const initialSettings = loadSettings();
+  const [playbackSpeed, setPlaybackSpeed] = useState(initialSettings.playbackSpeed);
+  const [swipeAutoplay, setSwipeAutoplay] = useState(initialSettings.swipeAutoplay);
+  const [fontSize, setFontSize] = useState<FontSize>(initialSettings.fontSize); 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   // REFS FOR AUDIO ENGINE
@@ -40,12 +41,17 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // ROBUST CACHING: Use Map for better performance with long strings
-  // Key: Text content, Value: Data URI string (base64 audio)
-  const audioCache = useRef<Map<string, string>>(new Map());
+  // Initialize from LocalStorage
+  const audioCache = useRef<Map<string, string>>(loadAudioCache());
   
   const [loading, setLoading] = useState(false);
   const [aiAudioLoading, setAiAudioLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Persist settings changes
+  useEffect(() => {
+      saveSettings({ fontSize, playbackSpeed, swipeAutoplay });
+  }, [fontSize, playbackSpeed, swipeAutoplay]);
 
   // Load vocabulary when language changes
   const refreshData = useCallback(() => {
@@ -55,6 +61,15 @@ export default function App() {
       // Load news from storage
       const savedNews = loadNewsData(selectedLang);
       setNewsArticles(savedNews);
+      
+      // Refresh Settings too (in case import changed them)
+      const settings = loadSettings();
+      setFontSize(settings.fontSize);
+      setPlaybackSpeed(settings.playbackSpeed);
+      setSwipeAutoplay(settings.swipeAutoplay);
+      
+      // Refresh Audio Cache from storage (in case import added new audio)
+      audioCache.current = loadAudioCache();
   }, [selectedLang]);
 
   useEffect(() => {
@@ -242,15 +257,16 @@ export default function App() {
 
   }, [selectedLang, playbackSpeed, speakNative]);
 
-  // 3. AI Speech (Cached)
+  // 3. AI Speech (Persistent Cache)
   const speakAI = useCallback(async (text: string) => {
-    // 1. Check Cache (Map is faster and safer for long text)
+    // 1. Check Cache (RAM & LocalStorage)
+    // Normalize text to avoid duplicate requests for "Hello" vs "Hello "
     const cacheKey = text.trim();
     
     if (audioCache.current.has(cacheKey)) {
         const cachedUrl = audioCache.current.get(cacheKey);
         if (cachedUrl) {
-            console.log("Playing from Cache", cacheKey);
+            console.log("Playing from Persistent Cache", cacheKey);
             playAudioSource(cachedUrl, playbackSpeed);
             return;
         }
@@ -269,14 +285,16 @@ export default function App() {
         const base64Wav = await getHighQualityAudio(text);
         const url = `data:audio/wav;base64,${base64Wav}`;
         
-        // 3. Save to Cache
+        // 3. Save to RAM Cache
         audioCache.current.set(cacheKey, url);
         
-        // 4. Play
+        // 4. Save to Persistent Cache (LocalStorage)
+        saveAudioCache(audioCache.current);
+        
+        // 5. Play
         playAudioSource(url, playbackSpeed);
     } catch (err) {
         console.error("AI Audio playback error", err);
-        // Do not fallback to speakFast here to avoid confusion, just alert or log
         setError("AI Voice unavailable right now. Try Fast mode.");
     } finally {
         setAiAudioLoading(false);
@@ -629,27 +647,28 @@ export default function App() {
                       </div>
 
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                          <p className="font-bold text-slate-600 mb-2">Data Management</p>
+                          <p className="font-bold text-slate-600 mb-2">Full Backup (Includes Audio)</p>
                           <div className="grid grid-cols-2 gap-3">
                               <button 
                                 onClick={() => {
-                                    const data = getRawDataForExport(selectedLang || 'fr');
+                                    if (!selectedLang) return;
+                                    const data = getRawDataForExport(selectedLang);
                                     const blob = new Blob([data], { type: "application/json" });
                                     const url = URL.createObjectURL(blob);
                                     const a = document.createElement('a');
                                     a.href = url;
-                                    a.download = `backup_${selectedLang}_${Date.now()}.json`;
+                                    a.download = `full_backup_${selectedLang}_${Date.now()}.json`;
                                     a.click();
                                 }}
-                                className="flex flex-col items-center justify-center p-3 bg-white border-2 border-slate-200 rounded-xl hover:bg-sky-50 hover:border-sky-200 transition-all"
+                                className="flex flex-col items-center justify-center p-3 bg-white border-2 border-slate-200 rounded-xl hover:bg-sky-50 hover:border-sky-200 transition-all active:scale-95"
                               >
                                   <Download className="w-6 h-6 text-sky-500 mb-1" />
-                                  <span className="text-xs font-bold text-slate-500">Backup</span>
+                                  <span className="text-xs font-bold text-slate-500">Download</span>
                               </button>
 
                               <button 
                                 onClick={() => fileInputRef.current?.click()}
-                                className="flex flex-col items-center justify-center p-3 bg-white border-2 border-slate-200 rounded-xl hover:bg-green-50 hover:border-green-200 transition-all"
+                                className="flex flex-col items-center justify-center p-3 bg-white border-2 border-slate-200 rounded-xl hover:bg-green-50 hover:border-green-200 transition-all active:scale-95"
                               >
                                   <Upload className="w-6 h-6 text-green-500 mb-1" />
                                   <span className="text-xs font-bold text-slate-500">Restore</span>
@@ -668,7 +687,7 @@ export default function App() {
                                         const success = importDataFromJson(content, selectedLang);
                                         if (success) {
                                             refreshData();
-                                            alert("Import successful!");
+                                            alert("Restored successfully! Audio & Settings updated.");
                                             setIsSettingsOpen(false);
                                         } else {
                                             alert("Invalid file format.");
@@ -678,6 +697,9 @@ export default function App() {
                                 }}
                               />
                           </div>
+                          <p className="text-[10px] text-slate-400 mt-2 text-center leading-tight">
+                              Saves all your vocab, news, settings, and *downloaded AI voices* so you can play offline.
+                          </p>
                       </div>
                   </div>
               </div>
