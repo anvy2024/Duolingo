@@ -463,3 +463,47 @@ export const getHighQualityAudio = async (text: string): Promise<string> => {
         throw error;
     }
 }
+
+export const checkSentenceGrammar = async (word: string, sentence: string, lang: Language): Promise<{isCorrect: boolean, feedback: string, correction?: string}> => {
+    let targetLang = 'French';
+    if (lang === 'en') targetLang = 'English';
+    else if (lang === 'zh') targetLang = 'Chinese';
+    else if (lang === 'es') targetLang = 'Spanish';
+
+    const prompt = `
+        I am a student learning ${targetLang}.
+        My task is to write a sentence using the word: "${word}".
+        My sentence is: "${sentence}".
+        
+        Please check if my sentence is grammatically correct and natural.
+        Respond in JSON format.
+        
+        Language for feedback (explanation): Vietnamese.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        isCorrect: { type: Type.BOOLEAN },
+                        feedback: { type: Type.STRING, description: "Explain in Vietnamese why it is correct or incorrect" },
+                        correction: { type: Type.STRING, description: "If incorrect, provide the corrected version in target language. If correct, leave empty." }
+                    },
+                    required: ["isCorrect", "feedback"]
+                }
+            }
+        });
+
+        const text = response.text;
+        if (!text) throw new Error("No response");
+        return JSON.parse(text);
+    } catch (error) {
+        console.error("Grammar check error:", error);
+        return { isCorrect: false, feedback: "Lỗi kết nối AI. Vui lòng thử lại." };
+    }
+}

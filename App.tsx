@@ -6,7 +6,7 @@ import { loadVocabularyData, appendVocabulary, updateWordStatus, removeVocabular
 import { Dashboard } from './components/Dashboard';
 import { StudyList } from './components/StudyList';
 import { Flashcard } from './components/Flashcard';
-import { VocabularyList } from './components/VocabularyList';
+import { VocabularyList, FilterType } from './components/VocabularyList';
 import { NewsReader } from './components/NewsReader';
 import { ChevronLeft, ChevronRight, CheckCircle, Loader2, X, Download, Upload, AlertTriangle, Globe, BookOpen, ArrowRight, LogOut } from 'lucide-react';
 import { TRANSLATIONS } from './constants/translations';
@@ -18,8 +18,10 @@ export default function App() {
   const [mode, setMode] = useState<AppMode>(AppMode.LANGUAGE_SELECT);
   const [vocab, setVocab] = useState<VocabularyWord[]>([]);
   const [currentBatch, setCurrentBatch] = useState<VocabularyWord[]>([]);
-  const [flashcardIndex, setFlashcardIndex] = useState(0);
   const [studyListTitle, setStudyListTitle] = useState<string>('');
+  
+  // Initial filter for Vocab List
+  const [initialFilter, setInitialFilter] = useState<FilterType>('ALL');
   
   // News State
   const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([]);
@@ -351,23 +353,20 @@ export default function App() {
 
   const handleStartFavorites = () => {
       if (!selectedLang) return;
-      const favorites = vocab.filter(v => v.isFavorite);
-      if (favorites.length === 0) return;
-      const shuffled = [...favorites].sort(() => 0.5 - Math.random());
-      setCurrentBatch(shuffled);
-      setStudyListTitle(TRANSLATIONS[selectedLang].favorites);
-      setMode(AppMode.STUDY_LIST); 
+      setInitialFilter('FAV');
+      setMode(AppMode.VOCAB_LIST);
   }
 
   const handleStartMastered = () => {
     if (!selectedLang) return;
-    const mastered = vocab.filter(v => v.mastered);
-    if (mastered.length === 0) return;
-    const shuffled = [...mastered].sort(() => 0.5 - Math.random());
-    setCurrentBatch(shuffled);
-    setStudyListTitle(TRANSLATIONS[selectedLang].mastered);
-    setMode(AppMode.STUDY_LIST); 
+    setInitialFilter('MASTERED');
+    setMode(AppMode.VOCAB_LIST);
   };
+  
+  const handleViewList = () => {
+      setInitialFilter('ALL');
+      setMode(AppMode.VOCAB_LIST);
+  }
 
   const handleToggleMastered = (id: string, status: boolean) => {
       if (!selectedLang) return;
@@ -463,7 +462,7 @@ export default function App() {
           onStartReview={handleStartReview}
           onStartFavorites={handleStartFavorites}
           onStartMastered={handleStartMastered}
-          onViewList={() => setMode(AppMode.VOCAB_LIST)}
+          onViewList={handleViewList}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenNews={handleOpenNews}
           onSwitchLang={() => setSelectedLang(null)}
@@ -501,6 +500,7 @@ export default function App() {
             onToggleSpeed={toggleSpeed}
             onAddWord={handleAddWord}
             onEditWord={handleEditWord}
+            initialFilter={initialFilter}
           />
       )}
 

@@ -1,10 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { VocabularyWord, Language } from '../types';
-import { Zap, Sparkles, Search, ArrowLeft, Trash2, X, Heart, CheckCircle, Plus, Save, Loader2, Gamepad2, Play, HelpCircle, Headphones, Grid, Volume2, Pause, Square, Clock, Circle, Pencil } from 'lucide-react';
+import { Zap, Sparkles, Search, ArrowLeft, Trash2, X, Heart, CheckCircle, Plus, Save, Loader2, Gamepad2, Play, HelpCircle, Headphones, Grid, Volume2, Pause, Square, Clock, Circle, Pencil, Edit3, Shuffle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Flashcard } from './Flashcard';
 import { generateSingleWordDetails } from '../services/geminiService';
 import { TRANSLATIONS } from '../constants/translations';
+
+export type FilterType = 'ALL' | 'FAV' | 'MASTERED' | 'VERBS';
 
 interface VocabularyListProps {
   words: VocabularyWord[];
@@ -20,22 +22,22 @@ interface VocabularyListProps {
   onToggleSpeed: () => void;
   onAddWord: (word: VocabularyWord) => void;
   onEditWord: (word: VocabularyWord) => void;
+  initialFilter?: FilterType;
 }
 
-type ViewMode = 'LIST' | 'GAME_MENU' | 'GAME_QUIZ' | 'GAME_AUDIO' | 'GAME_MATCH';
-type FilterType = 'ALL' | 'FAV' | 'MASTERED' | 'VERBS';
+type ViewMode = 'LIST' | 'GAME_MENU' | 'GAME_QUIZ' | 'GAME_AUDIO' | 'GAME_MATCH' | 'GAME_FILL' | 'GAME_SCRAMBLE';
 
 export const VocabularyList: React.FC<VocabularyListProps> = ({ 
     words, currentLang, onBack, speakFast, speakAI, aiLoading, onDelete, 
-    onToggleMastered, onToggleFavorite, playbackSpeed, onToggleSpeed, onAddWord, onEditWord
+    onToggleMastered, onToggleFavorite, playbackSpeed, onToggleSpeed, onAddWord, onEditWord, initialFilter = 'ALL'
 }) => {
   const t = TRANSLATIONS[currentLang];
   const [viewMode, setViewMode] = useState<ViewMode>('LIST');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedWord, setSelectedWord] = useState<VocabularyWord | null>(null);
+  const [selectedWordId, setSelectedWordId] = useState<string | null>(null);
   
   // Filter State
-  const [filterType, setFilterType] = useState<FilterType>('ALL');
+  const [filterType, setFilterType] = useState<FilterType>(initialFilter);
   
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -50,6 +52,10 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   const [currentPlayIndex, setCurrentPlayIndex] = useState(0);
   const [playDelay, setPlayDelay] = useState(2000); // 2000ms = 2s default
   const [showSettings, setShowSettings] = useState(false);
+  
+  // Swipe State for Modal
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
   
   // Refs
   const loopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -81,6 +87,10 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   
+  // Scramble Game State
+  const [scrambledLetters, setScrambledLetters] = useState<{id: number, char: string}[]>([]);
+  const [userSpelling, setUserSpelling] = useState<{id: number, char: string}[]>([]);
+
   // Matching Game Specifics
   const [matchedPairs, setMatchedPairs] = useState<string[]>([]);
   const [flippedCards, setFlippedCards] = useState<{id: string, type: 'target' | 'viet'}[]>([]);
@@ -98,6 +108,8 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
     
     return true;
   });
+
+  const selectedWord = selectedWordId ? filteredWords.find(w => w.id === selectedWordId) : null;
 
   // --- AUTO PLAY LOGIC ---
   const startAutoPlay = () => {
@@ -169,11 +181,49 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
     };
   }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue, speakFast, playDelay]);
 
+  // --- MODAL SWIPE LOGIC ---
+  const handleNextWord = () => {
+      if (!selectedWordId) return;
+      const idx = filteredWords.findIndex(w => w.id === selectedWordId);
+      if (idx < filteredWords.length - 1) {
+          setSelectedWordId(filteredWords[idx + 1].id);
+      }
+  }
+
+  const handlePrevWord = () => {
+      if (!selectedWordId) return;
+      const idx = filteredWords.findIndex(w => w.id === selectedWordId);
+      if (idx > 0) {
+          setSelectedWordId(filteredWords[idx - 1].id);
+      }
+  }
+
+  const onTouchStart = (e: React.TouchEvent) => {
+      setTouchEnd(null);
+      setTouchStart(e.targetTouches[0].clientX);
+  }
+
+  const onTouchMove = (e: React.TouchEvent) => {
+      setTouchEnd(e.targetTouches[0].clientX);
+  }
+
+  const onTouchEnd = () => {
+      if (!touchStart || !touchEnd) return;
+      const distance = touchStart - touchEnd;
+      const isLeftSwipe = distance > 50;
+      const isRightSwipe = distance < -50;
+      
+      if (isLeftSwipe) handleNextWord();
+      if (isRightSwipe) handlePrevWord();
+  }
 
   // --- GAME LOGIC ---
   const startGame = (mode: ViewMode) => {
-      if (words.length < 4) {
-          alert(t.needMoreWords);
+      // USE FILTERED WORDS for game
+      const pool = filteredWords;
+      
+      if (pool.length < 4) {
+          alert(`Not enough words in this list (${pool.length}). Need at least 4.`);
           return;
       }
       setScore(0);
@@ -183,26 +233,55 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
       setFlippedCards([]);
       setSelectedAnswer(null);
       setIsCorrect(null);
+      setUserSpelling([]);
+      setScrambledLetters([]);
 
       // Prepare Questions
-      const shuffled = [...words].sort(() => 0.5 - Math.random());
+      const shuffled = [...pool].sort(() => 0.5 - Math.random());
       const selected = shuffled.slice(0, 10); // Max 10 questions per round
 
       if (mode === 'GAME_QUIZ' || mode === 'GAME_AUDIO') {
           const questions = selected.map(word => {
-              const distractors = words
+              const distractors = pool
                   .filter(w => w.id !== word.id)
                   .sort(() => 0.5 - Math.random())
                   .slice(0, 3);
               
               const options = [word, ...distractors].sort(() => 0.5 - Math.random());
-              return {
-                  target: word,
-                  options: options
-              };
+              return { target: word, options: options };
           });
           setGameQuestions(questions);
-      } else if (mode === 'GAME_MATCH') {
+      } 
+      else if (mode === 'GAME_FILL') {
+          // Fill in the blank using example sentences
+          const questions = selected.map(word => {
+               // Try to find the word in the example to mask it
+               const example = word.example.target;
+               const regex = new RegExp(word.target, 'gi');
+               const masked = example.replace(regex, '_____');
+               
+               // If word not found in example (rare but possible), fallback to standard quiz
+               const questionText = masked.includes('_____') ? masked : `Which word means: "${word.vietnamese}"?`;
+
+               const distractors = pool.filter(w => w.id !== word.id).sort(() => 0.5 - Math.random()).slice(0, 3);
+               const options = [word, ...distractors].sort(() => 0.5 - Math.random());
+
+               return { target: word, questionText, options };
+          });
+          setGameQuestions(questions);
+      }
+      else if (mode === 'GAME_SCRAMBLE') {
+          const questions = selected.map(word => {
+              const cleanTarget = word.target.replace(/[^\p{L}]/gu, ''); // Remove non-letters for simplicity
+              const chars = cleanTarget.split('').map((c, i) => ({ id: i, char: c }));
+              const shuffledChars = [...chars].sort(() => 0.5 - Math.random());
+              return { target: word, chars: shuffledChars };
+          });
+          setGameQuestions(questions);
+          // Init first question
+          setScrambledLetters(questions[0].chars);
+      }
+      else if (mode === 'GAME_MATCH') {
           // Take 4 pairs (8 cards)
           const pairs = shuffled.slice(0, 4);
           let cards: any[] = [];
@@ -228,12 +307,10 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
       
       if (correct) {
           setScore(prev => prev + 10);
-          // Sound effect
           const audio = new Audio('https://actions.google.com/sounds/v1/cartoon/pop.ogg');
           audio.volume = 0.5;
           audio.play().catch(() => {});
       } else {
-           // Wrong sound
            const audio = new Audio('https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg');
            audio.volume = 0.5;
            audio.play().catch(() => {});
@@ -241,14 +318,63 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
 
       setTimeout(() => {
           if (questionIndex < gameQuestions.length - 1) {
-              setQuestionIndex(prev => prev + 1);
+              const nextIndex = questionIndex + 1;
+              setQuestionIndex(nextIndex);
               setSelectedAnswer(null);
               setIsCorrect(null);
+              
+              // Specific setup for next question based on mode
+              if (viewMode === 'GAME_SCRAMBLE') {
+                  setScrambledLetters(gameQuestions[nextIndex].chars);
+                  setUserSpelling([]);
+              }
           } else {
               setIsGameOver(true);
           }
       }, 1500);
   };
+
+  // Scramble Game Logic
+  const handleScrambleTap = (letterObj: {id: number, char: string}) => {
+      const newSpelling = [...userSpelling, letterObj];
+      setUserSpelling(newSpelling);
+      setScrambledLetters(prev => prev.filter(l => l.id !== letterObj.id));
+
+      // Check if word complete
+      if (newSpelling.length === gameQuestions[questionIndex].target.target.replace(/[^\p{L}]/gu, '').length) {
+          const attempt = newSpelling.map(l => l.char).join('');
+          const actual = gameQuestions[questionIndex].target.target.replace(/[^\p{L}]/gu, '');
+          
+          if (attempt.toLowerCase() === actual.toLowerCase()) {
+              setIsCorrect(true);
+              setScore(prev => prev + 10);
+               const audio = new Audio('https://actions.google.com/sounds/v1/cartoon/pop.ogg');
+               audio.play().catch(() => {});
+          } else {
+              setIsCorrect(false);
+               const audio = new Audio('https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg');
+               audio.play().catch(() => {});
+          }
+
+          setTimeout(() => {
+              if (questionIndex < gameQuestions.length - 1) {
+                  const next = questionIndex + 1;
+                  setQuestionIndex(next);
+                  setScrambledLetters(gameQuestions[next].chars);
+                  setUserSpelling([]);
+                  setIsCorrect(null);
+              } else {
+                  setIsGameOver(true);
+              }
+          }, 1000);
+      }
+  };
+
+  const resetScramble = () => {
+      setScrambledLetters([...scrambledLetters, ...userSpelling]); // Put them back roughly
+      // Ideally restore original scrambled order but random back is fine
+      setUserSpelling([]);
+  }
 
   const handleCardFlip = (card: any, index: number) => {
       if (flippedCards.length === 2 || matchedPairs.includes(card.pairId)) return;
@@ -288,8 +414,8 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
     e.stopPropagation();
     if (window.confirm(t.confirmDelete)) {
         onDelete(id);
-        if (selectedWord?.id === id) {
-            setSelectedWord(null);
+        if (selectedWordId === id) {
+            setSelectedWordId(null);
         }
     }
   };
@@ -328,28 +454,21 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   }
 
   const handleCardToggleMastered = (id: string, status: boolean) => {
-    onToggleMastered(id, status); // Fixed logic: Passed status should be THE NEW STATUS
-    if (selectedWord && selectedWord.id === id) {
-        setSelectedWord({ ...selectedWord, mastered: status });
-    }
+    onToggleMastered(id, status); 
+    // Selected word updates automatically via reactive `selectedWord`
   };
 
   const handleListMasterClick = (e: React.MouseEvent, id: string, status: boolean) => {
       e.stopPropagation();
-      // IMPORTANT: Pass the NEW status (inverted), not the current one
       onToggleMastered(id, status);
   };
 
   const handleCardToggleFavorite = (id: string, status: boolean) => {
       onToggleFavorite(id, status);
-      if (selectedWord && selectedWord.id === id) {
-          setSelectedWord({ ...selectedWord, isFavorite: status });
-      }
   }
 
   const handleListFavoriteClick = (e: React.MouseEvent, id: string, status: boolean) => {
       e.stopPropagation();
-      // IMPORTANT: Pass the NEW status (inverted), not the current one
       onToggleFavorite(id, status);
   }
 
@@ -424,6 +543,11 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                     <h2 className="text-xl font-extrabold text-slate-700">
                         {viewMode === 'LIST' ? t.dictionary : t.playGames}
                     </h2>
+                    {viewMode !== 'LIST' && (
+                        <p className="text-xs text-slate-400 font-bold uppercase">
+                           List: {filterType === 'ALL' ? 'All' : filterType} ({filteredWords.length})
+                        </p>
+                    )}
                 </div>
             </div>
             
@@ -566,7 +690,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                             <div 
                                 id={`word-card-${word.id}`}
                                 key={word.id} 
-                                onClick={() => !isAutoPlaying && setSelectedWord(word)}
+                                onClick={() => !isAutoPlaying && setSelectedWordId(word.id)}
                                 className={`rounded-2xl p-4 border-2 border-b-4 flex items-center justify-between transition-all duration-500 ${
                                     isPlayingThis 
                                         ? 'bg-yellow-100 border-yellow-300 scale-105 shadow-lg z-10' 
@@ -593,7 +717,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                                                 <Pencil className="w-4 h-4" />
                                             </button>
 
-                                            {/* FAVORITE (ADDED BACK) */}
+                                            {/* FAVORITE */}
                                             <button 
                                                 onClick={(e) => handleListFavoriteClick(e, word.id, !word.isFavorite)}
                                                 className={`p-2 rounded-xl transition-colors border border-slate-200 hover:border-rose-200 ${word.isFavorite ? 'text-rose-500 bg-rose-50 border-rose-200' : 'text-slate-300 bg-slate-50 hover:text-rose-400'}`}
@@ -637,7 +761,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                 <div className="bg-orange-100 p-6 rounded-3xl text-center border-2 border-orange-200 mb-2">
                      <Gamepad2 className="w-16 h-16 text-orange-500 mx-auto mb-2" />
                      <h3 className="text-xl font-black text-orange-600">{t.playGames}</h3>
-                     <p className="text-orange-400 font-bold text-sm">{words.length} {t.totalWords}</p>
+                     <p className="text-orange-400 font-bold text-sm">{filteredWords.length} words in current list</p>
                 </div>
 
                 <button onClick={() => startGame('GAME_QUIZ')} className="w-full bg-white border-2 border-slate-200 border-b-4 rounded-2xl p-4 flex items-center gap-4 hover:bg-sky-50 active:border-b-2 active:translate-y-[2px] transition-all group">
@@ -647,6 +771,26 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                     <div className="text-left">
                          <h4 className="text-lg font-extrabold text-slate-700">{t.quizMode}</h4>
                          <p className="text-slate-400 text-sm font-bold">4 Options, 1 Choice</p>
+                    </div>
+                </button>
+
+                <button onClick={() => startGame('GAME_FILL')} className="w-full bg-white border-2 border-slate-200 border-b-4 rounded-2xl p-4 flex items-center gap-4 hover:bg-green-50 active:border-b-2 active:translate-y-[2px] transition-all group">
+                    <div className="p-3 bg-green-100 rounded-xl text-green-500 group-hover:scale-110 transition-transform">
+                        <Edit3 className="w-8 h-8" />
+                    </div>
+                    <div className="text-left">
+                         <h4 className="text-lg font-extrabold text-slate-700">Fill in Blank</h4>
+                         <p className="text-slate-400 text-sm font-bold">Complete the sentence</p>
+                    </div>
+                </button>
+
+                <button onClick={() => startGame('GAME_SCRAMBLE')} className="w-full bg-white border-2 border-slate-200 border-b-4 rounded-2xl p-4 flex items-center gap-4 hover:bg-purple-50 active:border-b-2 active:translate-y-[2px] transition-all group">
+                    <div className="p-3 bg-purple-100 rounded-xl text-purple-500 group-hover:scale-110 transition-transform">
+                        <Shuffle className="w-8 h-8" />
+                    </div>
+                    <div className="text-left">
+                         <h4 className="text-lg font-extrabold text-slate-700">Unscramble</h4>
+                         <p className="text-slate-400 text-sm font-bold">Spell the word</p>
                     </div>
                 </button>
 
@@ -692,8 +836,8 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
              </div>
         )}
 
-        {/* 4. ACTIVE GAME */}
-        {!isGameOver && (viewMode === 'GAME_QUIZ' || viewMode === 'GAME_AUDIO') && gameQuestions.length > 0 && (
+        {/* 4. ACTIVE GAME: QUIZ / AUDIO / FILL */}
+        {!isGameOver && (viewMode === 'GAME_QUIZ' || viewMode === 'GAME_AUDIO' || viewMode === 'GAME_FILL') && gameQuestions.length > 0 && (
             <div className="flex flex-col h-full">
                 <div className="flex justify-between items-center mb-6">
                     <span className="font-black text-slate-400">Q: {questionIndex + 1}/{gameQuestions.length}</span>
@@ -702,11 +846,22 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
 
                 <div className="flex-1 flex flex-col justify-center">
                      <div className="text-center mb-8">
-                         {viewMode === 'GAME_QUIZ' ? (
+                         {viewMode === 'GAME_QUIZ' && (
                              <h2 className="text-4xl font-black text-slate-700 animate-in slide-in-from-top duration-300">
                                  {gameQuestions[questionIndex].target.target}
                              </h2>
-                         ) : (
+                         )}
+                         
+                         {viewMode === 'GAME_FILL' && (
+                             <div className="animate-in slide-in-from-top duration-300">
+                                 <p className="text-xl font-medium text-slate-500 mb-2">Complete the sentence:</p>
+                                 <h2 className="text-2xl font-black text-slate-700 bg-white p-4 rounded-2xl border-2 border-slate-100">
+                                     {gameQuestions[questionIndex].questionText}
+                                 </h2>
+                             </div>
+                         )}
+
+                         {viewMode === 'GAME_AUDIO' && (
                              <button 
                                 onClick={() => speakFast(gameQuestions[questionIndex].target.target)}
                                 className="w-32 h-32 bg-indigo-500 rounded-full flex items-center justify-center mx-auto shadow-lg shadow-indigo-200 active:scale-95 transition-transform"
@@ -744,7 +899,59 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
             </div>
         )}
 
-        {/* 5. MATCHING GAME */}
+        {/* 5. UNSCRAMBLE GAME */}
+        {!isGameOver && viewMode === 'GAME_SCRAMBLE' && gameQuestions.length > 0 && (
+            <div className="flex flex-col h-full">
+                <div className="flex justify-between items-center mb-6">
+                     <div className="text-left">
+                         <p className="text-xs font-bold text-slate-400">Translate:</p>
+                         <p className="text-lg font-black text-slate-700">{gameQuestions[questionIndex].target.vietnamese}</p>
+                     </div>
+                    <span className="font-black text-orange-500 bg-orange-100 px-3 py-1 rounded-lg">{score}</span>
+                </div>
+
+                <div className="flex-1 flex flex-col items-center justify-center">
+                    
+                    {/* Answer Slot */}
+                    <div className="flex flex-wrap gap-2 justify-center mb-8 min-h-[60px]">
+                        {userSpelling.map((l, idx) => (
+                            <div key={idx} className="w-12 h-12 bg-slate-700 text-white rounded-xl flex items-center justify-center font-black text-xl shadow-md animate-in zoom-in">
+                                {l.char}
+                            </div>
+                        ))}
+                        {userSpelling.length === 0 && (
+                            <span className="text-slate-300 italic font-bold self-center">Tap letters below</span>
+                        )}
+                    </div>
+                    
+                    {/* Correct/Incorrect Indicator */}
+                    {isCorrect !== null && (
+                        <div className={`mb-6 px-6 py-2 rounded-xl font-black text-white animate-in fade-in ${isCorrect ? 'bg-green-500' : 'bg-rose-500'}`}>
+                            {isCorrect ? 'CORRECT!' : 'TRY AGAIN'}
+                        </div>
+                    )}
+
+                    {/* Letter Pool */}
+                    <div className="flex flex-wrap gap-3 justify-center">
+                        {scrambledLetters.map((l) => (
+                            <button 
+                                key={l.id}
+                                onClick={() => handleScrambleTap(l)}
+                                className="w-14 h-14 bg-white border-2 border-b-4 border-slate-200 text-slate-700 rounded-xl flex items-center justify-center font-black text-xl active:border-b-2 active:translate-y-[2px] hover:bg-sky-50 transition-all"
+                            >
+                                {l.char}
+                            </button>
+                        ))}
+                    </div>
+
+                    <button onClick={resetScramble} className="mt-12 text-slate-400 font-bold uppercase text-xs hover:text-slate-600">
+                        Reset Word
+                    </button>
+                </div>
+            </div>
+        )}
+
+        {/* 6. MATCHING GAME */}
         {!isGameOver && viewMode === 'GAME_MATCH' && gameQuestions.length > 0 && (
              <div className="flex flex-col h-full">
                  <div className="flex justify-between items-center mb-4">
@@ -878,27 +1085,42 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
          </div>
       )}
 
+      {/* SELECTED WORD MODAL WITH SWIPE */}
       {selectedWord && (
         <div 
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer"
-            onClick={() => setSelectedWord(null)}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer overflow-hidden"
+            onClick={() => setSelectedWordId(null)}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
         >
-            <div className="relative w-full max-w-lg cursor-auto">
+            {/* Navigation Arrows (Visual cues for Desktop/Tablet) */}
+            <button 
+                onClick={(e) => { e.stopPropagation(); handlePrevWord(); }}
+                disabled={filteredWords.indexOf(selectedWord) === 0}
+                className="hidden md:block absolute left-4 p-3 bg-white/20 hover:bg-white/40 text-white rounded-full backdrop-blur-md disabled:opacity-20 transition-all z-50"
+            >
+                <ChevronLeft className="w-8 h-8" />
+            </button>
+
+            <div className="relative w-full max-w-lg cursor-auto animate-in zoom-in duration-300">
                 <div onClick={(e) => e.stopPropagation()}>
                     <Flashcard 
+                        key={selectedWord.id} // Force re-render on swipe
                         word={selectedWord} 
                         speakFast={speakFast}
                         speakAI={speakAI}
                         aiLoading={aiLoading}
                         onToggleMastered={handleCardToggleMastered}
                         onToggleFavorite={handleCardToggleFavorite}
+                        currentLang={currentLang}
                     />
                 </div>
                 
-                <div className="mt-6 flex justify-center gap-4">
+                <div className="mt-6 flex justify-center gap-4" onClick={(e) => e.stopPropagation()}>
                     <button 
                         onClick={(e) => {
-                            setSelectedWord(null);
+                            setSelectedWordId(null);
                             handleEditClick(e, selectedWord);
                         }}
                         className="flex items-center gap-2 px-4 py-2 bg-white text-indigo-500 rounded-xl font-bold border-2 border-slate-200 hover:bg-indigo-50 transition-colors"
@@ -914,6 +1136,14 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                     </button>
                 </div>
             </div>
+
+            <button 
+                onClick={(e) => { e.stopPropagation(); handleNextWord(); }}
+                disabled={filteredWords.indexOf(selectedWord) === filteredWords.length - 1}
+                className="hidden md:block absolute right-4 p-3 bg-white/20 hover:bg-white/40 text-white rounded-full backdrop-blur-md disabled:opacity-20 transition-all z-50"
+            >
+                <ChevronRight className="w-8 h-8" />
+            </button>
         </div>
       )}
     </div>

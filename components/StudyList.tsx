@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { VocabularyWord, Language } from '../types';
-import { Zap, Sparkles, ArrowRight, Volume2, Home, Heart, CheckCircle, Circle, Play, Pause, Square, Clock, X } from 'lucide-react';
+import { Zap, Sparkles, ArrowRight, Volume2, Home, Heart, CheckCircle, Circle, Play, Pause, Square, Clock, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Flashcard } from './Flashcard';
 import { TRANSLATIONS } from '../constants/translations';
 
 interface StudyListProps {
@@ -27,10 +28,13 @@ export const StudyList: React.FC<StudyListProps> = ({
   // --- AUTO PLAY STATE ---
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [playQueue, setPlayQueue] = useState<VocabularyWord[]>([]);
-  const [currentPlayIndex, setCurrentPlayIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [playDelay, setPlayDelay] = useState(2000); // Default 2s
   const [showSettings, setShowSettings] = useState(false);
+  
+  // Swipe State
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
   
   // Refs for loop management
   const loopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -47,9 +51,6 @@ export const StudyList: React.FC<StudyListProps> = ({
 
   const startAutoPlay = () => {
       if (words.length === 0) return;
-      // Auto play follows the current list order
-      setPlayQueue(words);
-      setCurrentPlayIndex(0);
       setIsAutoPlaying(true);
       setIsPaused(false);
       setShowSettings(false);
@@ -58,8 +59,6 @@ export const StudyList: React.FC<StudyListProps> = ({
   const stopAutoPlay = () => {
       setIsAutoPlaying(false);
       setIsPaused(false);
-      setPlayQueue([]);
-      setCurrentPlayIndex(0);
       if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
       window.speechSynthesis.cancel();
   };
@@ -67,7 +66,6 @@ export const StudyList: React.FC<StudyListProps> = ({
   const togglePause = () => {
       if (isPaused) {
           setIsPaused(false);
-          // Resume effectively happens by effect re-triggering
       } else {
           setIsPaused(true);
           if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
@@ -75,25 +73,55 @@ export const StudyList: React.FC<StudyListProps> = ({
       }
   };
 
-  // THE MAIN LOOP
+  const handleNext = () => {
+      if (currentIndex < words.length - 1) {
+          setCurrentIndex(prev => prev + 1);
+      } else {
+          // Optionally loop or stop
+      }
+  };
+
+  const handlePrev = () => {
+      if (currentIndex > 0) {
+          setCurrentIndex(prev => prev - 1);
+      }
+  };
+
+  // Swipe Handlers
+  const onTouchStart = (e: React.TouchEvent) => {
+      setTouchEnd(null);
+      setTouchStart(e.targetTouches[0].clientX);
+  }
+
+  const onTouchMove = (e: React.TouchEvent) => {
+      setTouchEnd(e.targetTouches[0].clientX);
+  }
+
+  const onTouchEnd = () => {
+      if (!touchStart || !touchEnd) return;
+      const distance = touchStart - touchEnd;
+      const isLeftSwipe = distance > 50;
+      const isRightSwipe = distance < -50;
+      
+      if (isLeftSwipe) {
+          handleNext();
+      }
+      if (isRightSwipe) {
+          handlePrev();
+      }
+  }
+
+  // THE AUTO PLAY LOOP
   useEffect(() => {
-    // If not playing or paused, do nothing
     if (!isAutoPlaying || isPaused) return;
 
-    // If finished queue
-    if (currentPlayIndex >= playQueue.length) {
+    if (currentIndex >= words.length) {
         stopAutoPlay();
         return;
     }
 
-    const word = playQueue[currentPlayIndex];
+    const word = words[currentIndex];
     
-    // Scroll to word
-    const el = document.getElementById(`study-word-${word.id}`);
-    if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-
     // Logic to play and advance
     let hasAdvanced = false;
     
@@ -101,11 +129,14 @@ export const StudyList: React.FC<StudyListProps> = ({
         if (hasAdvanced || !isMountedRef.current || !isAutoPlaying || isPaused) return;
         hasAdvanced = true;
         loopTimeoutRef.current = setTimeout(() => {
-             setCurrentPlayIndex(prev => prev + 1);
+             if (currentIndex < words.length - 1) {
+                 setCurrentIndex(prev => prev + 1);
+             } else {
+                 stopAutoPlay();
+             }
         }, playDelay);
     };
 
-    // Small delay before speaking to allow UI to update
     const initialDelay = setTimeout(() => {
          speakFast(word.target, playNext);
     }, 500);
@@ -113,35 +144,32 @@ export const StudyList: React.FC<StudyListProps> = ({
     return () => {
         clearTimeout(initialDelay);
         if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
-        // We don't cancel speech here immediately because it might cut off the end of a word 
-        // when switching to the delay phase, but strict cleanup happens on unmount/pause.
     };
-  }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue, speakFast, playDelay]);
+  }, [currentIndex, isAutoPlaying, isPaused, words, speakFast, playDelay]);
 
-  const currentPlayingId = (isAutoPlaying && playQueue[currentPlayIndex]) ? playQueue[currentPlayIndex].id : null;
+
+  const currentWord = words[currentIndex];
 
   return (
-    <div className="flex flex-col h-full max-w-2xl mx-auto w-full relative">
+    <div className="flex flex-col h-full max-w-2xl mx-auto w-full relative bg-gray-100">
         
       {/* Header Bar */}
-      <div className="bg-gray-100 p-4 flex justify-between items-center border-b-2 border-slate-200 sticky top-0 z-20">
+      <div className="bg-gray-100/95 backdrop-blur p-4 flex justify-between items-center border-b-2 border-slate-200 sticky top-0 z-20">
             <div className="flex items-center gap-2">
                 <button onClick={onBackToHome} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
                     <X className="w-6 h-6 text-slate-400" />
                 </button>
                 <div className="flex flex-col">
                      <h3 className="font-extrabold text-slate-700 text-lg leading-none">{title || t.newVocab}</h3>
-                     <span className="text-xs font-bold text-slate-400 uppercase">{words.length} words</span>
+                     <span className="text-xs font-bold text-slate-400 uppercase">
+                        {currentIndex + 1} / {words.length}
+                     </span>
                 </div>
             </div>
             
             {isAutoPlaying ? (
                 // AUTO PLAY CONTROLS
                 <div className="flex items-center gap-2 animate-in slide-in-from-right duration-300">
-                    <span className="text-xs font-black text-indigo-500 mr-1">
-                        {playQueue.length > 0 ? `${currentPlayIndex + 1}/${playQueue.length}` : '0/0'}
-                    </span>
-                    
                     <button 
                         onClick={() => setShowSettings(!showSettings)}
                         className={`p-2 rounded-xl ${showSettings ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}
@@ -193,115 +221,63 @@ export const StudyList: React.FC<StudyListProps> = ({
           </div>
       )}
 
-      {/* List Content */}
-      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar pb-24">
-        
-        {!isAutoPlaying && (
-             <div className="bg-white rounded-2xl border-2 border-slate-200 p-6 mb-4 text-center shadow-sm">
-                <p className="text-slate-500 font-medium mb-4">{t.introText}</p>
-                <button 
-                    onClick={onComplete}
-                    className="w-full bg-green-500 text-white border-green-600 border-b-4 active:border-b-0 active:translate-y-1 px-6 py-3 rounded-xl text-base font-extrabold uppercase tracking-wide hover:bg-green-400 transition-all flex items-center justify-center gap-2"
-                >
-                    {t.startPractice}
-                    <ArrowRight className="w-5 h-5" />
-                </button>
-            </div>
-        )}
+      {/* Single Flashcard View with Swipe */}
+      <div 
+        className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden relative"
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+         {!isAutoPlaying && (
+             <div className="absolute top-1/2 left-2 transform -translate-y-1/2 z-10">
+                 <button 
+                    onClick={handlePrev} 
+                    disabled={currentIndex === 0}
+                    className="p-2 bg-white rounded-full shadow-md text-slate-400 disabled:opacity-30 hover:text-sky-500 hover:scale-110 transition-all"
+                 >
+                     <ChevronLeft className="w-8 h-8" />
+                 </button>
+             </div>
+         )}
+         
+         {!isAutoPlaying && (
+             <div className="absolute top-1/2 right-2 transform -translate-y-1/2 z-10">
+                 <button 
+                    onClick={handleNext} 
+                    disabled={currentIndex === words.length - 1}
+                    className="p-2 bg-white rounded-full shadow-md text-slate-400 disabled:opacity-30 hover:text-sky-500 hover:scale-110 transition-all"
+                 >
+                     <ChevronRight className="w-8 h-8" />
+                 </button>
+             </div>
+         )}
 
-        <div className="space-y-4">
-            {words.map((word, idx) => {
-                const isPlayingThis = word.id === currentPlayingId;
-                return (
-                    <div 
-                        key={word.id} 
-                        id={`study-word-${word.id}`}
-                        className={`rounded-2xl p-5 border-2 border-b-4 flex flex-col gap-4 relative transition-all duration-500 ${
-                            isPlayingThis 
-                            ? 'bg-yellow-50 border-yellow-400 scale-105 shadow-lg z-10' 
-                            : 'bg-white border-slate-200'
-                        }`}
-                    >
-                        <div className="flex justify-between items-start">
-                            <div className="flex-1 mr-2">
-                                <div className="flex items-center gap-3">
-                                    <span className={`font-extrabold px-2 py-1 rounded-lg text-xs ${isPlayingThis ? 'bg-yellow-200 text-yellow-700' : 'bg-slate-100 text-slate-400'}`}>#{idx + 1}</span>
-                                    <h3 className={`text-2xl font-black ${isPlayingThis ? 'text-slate-800' : 'text-slate-700'}`}>{word.target}</h3>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2 mt-2">
-                                    <span className="text-sm font-mono text-slate-500 border border-slate-200 px-1.5 rounded bg-white">{word.ipa}</span>
-                                    {word.viet_pronunciation && (
-                                        <span className="text-sm text-sky-500 font-bold italic">({word.viet_pronunciation})</span>
-                                    )}
-                                </div>
-                            </div>
-                            
-                            <div className="flex gap-2 shrink-0">
-                                {!isAutoPlaying && (
-                                    <>
-                                         <button 
-                                            onClick={() => speakAI(word.target)}
-                                            disabled={aiLoading}
-                                            className="p-3 rounded-xl bg-sky-500 text-white border-sky-600 border-b-4 active:border-b-0 active:translate-y-1 transition-all hover:bg-sky-400 disabled:opacity-50"
-                                        >
-                                            <Sparkles className="w-5 h-5" />
-                                        </button>
-                                        <button 
-                                            onClick={() => speakFast(word.target)}
-                                            className="p-3 rounded-xl bg-slate-100 text-slate-400 border-2 border-slate-200 border-b-4 hover:text-sky-500 hover:bg-slate-200 active:border-b-0 active:translate-y-1 transition-all"
-                                        >
-                                            <Zap className="w-5 h-5" />
-                                        </button>
-                                    </>
-                                )}
-                                {isPlayingThis && <Volume2 className="w-8 h-8 text-yellow-500 animate-bounce" />}
-                            </div>
-                        </div>
-                        
-                        <div className={`border-t-2 pt-3 ${isPlayingThis ? 'border-yellow-200' : 'border-slate-100'}`}>
-                            <p className="font-extrabold text-lg text-slate-600 mb-3">{word.vietnamese}</p>
-                            
-                            <div className={`rounded-xl p-4 border-2 ${isPlayingThis ? 'bg-white border-yellow-200' : 'bg-sky-50 border-sky-100'}`}>
-                                <div className="flex justify-between items-start gap-2">
-                                    <p className="text-slate-700 font-bold text-base leading-relaxed">{word.example.target}</p>
-                                    {!isAutoPlaying && (
-                                        <button 
-                                            onClick={() => speakFast(word.example.target)} 
-                                            className="text-sky-500 hover:text-sky-400 shrink-0 active:scale-90 transition-transform"
-                                        >
-                                            <Volume2 className="w-5 h-5" />
-                                        </button>
-                                    )}
-                                </div>
-                                {word.example.viet_pronunciation && (
-                                    <p className="text-slate-500 italic text-xs font-medium mt-1">{word.example.viet_pronunciation}</p>
-                                )}
-                                <p className="text-slate-500 font-medium mt-2">{word.example.vietnamese}</p>
-                            </div>
-                        </div>
-
-                        {/* Action Bar - Only show if not auto playing to reduce clutter, or keep simple */}
-                        {!isAutoPlaying && (
-                            <div className="flex justify-end items-center gap-2 pt-2">
-                                <button 
-                                    onClick={() => onToggleFavorite(word.id, !word.isFavorite)}
-                                    className={`p-2 rounded-xl border-2 transition-all ${word.isFavorite ? 'bg-rose-50 border-rose-200 text-rose-500' : 'bg-white border-slate-200 text-slate-300 hover:border-rose-200 hover:text-rose-400'}`}
-                                >
-                                    <Heart className={`w-5 h-5 ${word.isFavorite ? 'fill-rose-500' : ''}`} />
-                                </button>
-                                <button 
-                                    onClick={() => onToggleMastered(word.id, !word.mastered)}
-                                    className={`p-2 rounded-xl border-2 transition-all ${word.mastered ? 'bg-green-50 border-green-200 text-green-500' : 'bg-white border-slate-200 text-slate-300 hover:border-green-200 hover:text-green-500'}`}
-                                >
-                                    {word.mastered ? <CheckCircle className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                )
-            })}
-        </div>
+         {currentWord && (
+             <div className="w-full animate-in zoom-in duration-300">
+                 <Flashcard 
+                    key={currentWord.id}
+                    word={currentWord}
+                    speakFast={speakFast}
+                    speakAI={speakAI}
+                    aiLoading={aiLoading}
+                    onToggleMastered={onToggleMastered}
+                    onToggleFavorite={onToggleFavorite}
+                    currentLang={currentLang}
+                 />
+             </div>
+         )}
       </div>
+      
+      {/* Footer Progress */}
+      <div className="p-4 bg-white border-t-2 border-slate-200">
+         <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+             <div 
+                className="bg-green-500 h-full transition-all duration-500 ease-out rounded-full"
+                style={{ width: `${((currentIndex + 1) / words.length) * 100}%` }}
+             ></div>
+         </div>
+      </div>
+
     </div>
   );
 };
