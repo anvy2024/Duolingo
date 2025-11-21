@@ -61,12 +61,21 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
       return 'text-4xl md:text-5xl';
   };
 
+  // Critical style for iOS 3D transforms
+  const backfaceStyle: React.CSSProperties = {
+    backfaceVisibility: 'hidden',
+    WebkitBackfaceVisibility: 'hidden',
+  };
+
   return (
     <div className={`w-full max-w-sm aspect-[3/5] ${isViewMode ? 'max-h-[65vh]' : 'max-h-[600px]'} perspective-1000 mx-auto my-4 lg:my-0 cursor-pointer group select-none`} onClick={handleCardClick}>
       <div className={`relative w-full h-full transition-transform duration-500 transform-style-3d ${isFlipped ? 'rotate-y-180' : ''}`}>
         
         {/* FRONT SIDE */}
-        <div className={`absolute w-full h-full bg-white rounded-[2.5rem] border-2 border-slate-200 border-b-[8px] backface-hidden flex flex-col items-center justify-between p-6 shadow-sm ${word.mastered ? 'border-green-400 bg-green-50/30' : ''}`}>
+        <div 
+            className={`absolute w-full h-full bg-white rounded-[2.5rem] border-2 border-slate-200 border-b-[8px] flex flex-col items-center justify-between p-6 shadow-sm ${word.mastered ? 'border-green-400 bg-green-50/30' : ''}`}
+            style={backfaceStyle}
+        >
           
           {/* Top Row: Badges (Left) & Actions (Right) */}
           <div className="w-full flex justify-between items-start shrink-0 relative z-10">
@@ -145,12 +154,21 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
                        <p className="text-lg leading-snug font-medium text-slate-600 italic">
                            "{word.example.target}"
                        </p>
-                       <button 
-                           onClick={(e) => handleAudioClick(e, 'fast', word.example.target)}
-                           className="p-2 rounded-full text-sky-400 hover:bg-sky-50 hover:text-sky-600 transition-colors"
-                       >
-                           <Volume2 className="w-5 h-5" />
-                       </button>
+                       <div className="flex gap-3 mt-1">
+                            <button 
+                                onClick={(e) => handleAudioClick(e, 'fast', word.example.target)}
+                                className="p-2 rounded-full bg-slate-100 text-slate-400 hover:bg-sky-50 hover:text-sky-600 transition-colors"
+                            >
+                                <Volume2 className="w-5 h-5" />
+                            </button>
+                             <button 
+                                onClick={(e) => handleAudioClick(e, 'ai', word.example.target)}
+                                className="p-2 rounded-full bg-sky-100 text-sky-500 hover:bg-sky-200 transition-colors"
+                                disabled={aiLoading}
+                            >
+                                {aiLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Radio className="w-5 h-5" />}
+                            </button>
+                       </div>
                    </div>
                )}
           </div>
@@ -161,15 +179,19 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
         </div>
 
         {/* BACK SIDE */}
-        <div className={`absolute w-full h-full bg-white rounded-[2.5rem] border-2 border-slate-200 border-b-[8px] backface-hidden rotate-y-180 flex flex-col p-6 overflow-hidden ${word.mastered ? 'border-green-400' : ''}`}>
+        <div 
+            className={`absolute w-full h-full bg-white rounded-[2.5rem] border-2 border-slate-200 border-b-[8px] rotate-y-180 flex flex-col p-6 overflow-hidden ${word.mastered ? 'border-green-400' : ''}`}
+            style={backfaceStyle}
+        >
              
              {/* Header: Vietnamese Meaning */}
              <div className="flex justify-between items-start border-b-2 border-slate-100 pb-4 mb-4 shrink-0">
                  <div className="flex-1 mr-2">
                      <p className="text-xs text-slate-400 uppercase font-bold mb-1">Nghĩa tiếng Việt</p>
-                     <h3 className="text-2xl font-black text-slate-700 leading-tight">{word.vietnamese}</h3>
+                     <h3 className="text-2xl font-black text-slate-700 leading-tight break-words">{word.vietnamese}</h3>
                  </div>
-                 <div className="flex gap-2 shrink-0">
+                 {/* Fixed Action Container to prevent jumping */}
+                 <div className="flex flex-col gap-2 shrink-0 w-12 items-end">
                     <button 
                         onClick={(e) => handleAudioClick(e, 'fast', displayTarget)}
                         className="p-3 rounded-xl bg-slate-100 text-slate-400 hover:text-sky-500 transition-colors"
@@ -180,47 +202,58 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
              </div>
 
              {/* Scrollable Content */}
-             <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-6">
+             <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-4">
                  
                  {/* Pronunciation Block */}
                  <div className="bg-slate-50 p-4 rounded-2xl border-2 border-slate-100 shrink-0">
                     <div className="flex items-center gap-2 mb-2">
                          <span className="text-xs font-bold text-white bg-slate-400 px-2 py-0.5 rounded uppercase">IPA</span>
-                         <span className="font-mono text-slate-600 text-lg font-medium tracking-wide">{word.ipa}</span>
+                         <span className="font-mono text-slate-600 text-lg font-medium tracking-wide break-all">{word.ipa}</span>
                     </div>
                     {word.viet_pronunciation && (
                         <div className="flex items-center gap-2">
                             <span className="text-xs font-bold text-white bg-sky-400 px-2 py-0.5 rounded uppercase">Bồi</span>
-                            <span className="italic text-sky-600 text-xl font-bold">{word.viet_pronunciation}</span>
+                            <span className="italic text-sky-600 text-xl font-bold break-words">{word.viet_pronunciation}</span>
                         </div>
                     )}
                  </div>
 
-                 {/* Example Block */}
+                 {/* Example Block - Redesigned */}
                  {!isPhraseMode && (
                      <div className="flex-1">
-                        <p className="text-xs text-slate-400 uppercase font-bold mb-2 pl-1">Ví dụ mẫu</p>
-                        <div className="p-5 rounded-2xl bg-sky-50 border-2 border-sky-100 space-y-4">
+                        <div className="p-5 rounded-2xl bg-sky-50 border-2 border-sky-100 space-y-3">
+                            <p className="text-xs text-sky-500 uppercase font-bold">Ví dụ mẫu</p>
+                            
                             <div>
-                                <div className="flex items-start justify-between gap-2 mb-1">
-                                    <p className="font-bold text-slate-700 text-xl leading-snug">{word.example.target}</p>
-                                </div>
+                                <p className="font-bold text-slate-700 text-xl leading-snug">{word.example.target}</p>
                                 {word.example.viet_pronunciation && (
-                                    <p className="text-sm text-slate-500 italic font-medium mb-2">{word.example.viet_pronunciation}</p>
+                                    <p className="text-sm text-slate-500 italic font-medium mt-1">{word.example.viet_pronunciation}</p>
                                 )}
+                            </div>
+
+                            {/* Audio Actions Row for Example */}
+                            <div className="flex gap-3">
+                                <button 
+                                    onClick={(e) => handleAudioClick(e, 'fast', word.example.target)}
+                                    className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border-2 border-sky-100 text-sky-500 text-xs font-bold hover:bg-sky-50 active:scale-95 transition-all"
+                                >
+                                    <Volume2 className="w-4 h-4" /> Máy
+                                </button>
+                                <button 
+                                    onClick={(e) => handleAudioClick(e, 'ai', word.example.target)}
+                                    className="flex items-center gap-2 px-3 py-2 bg-sky-500 rounded-xl border-2 border-sky-600 text-white text-xs font-bold hover:bg-sky-600 active:scale-95 transition-all shadow-sm"
+                                    disabled={aiLoading}
+                                >
+                                    {aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radio className="w-4 h-4" />}
+                                    AI
+                                </button>
                             </div>
                             
                             <div className="w-full h-0.5 bg-sky-200/50"></div>
                             
-                            <div className="flex items-start gap-3">
-                                <p className="text-base text-slate-600 font-semibold leading-relaxed">{word.example.vietnamese}</p>
-                                <button 
-                                    onClick={(e) => handleAudioClick(e, 'fast', word.example.target)}
-                                    className="ml-auto bg-white text-sky-500 p-2 rounded-xl border-b-2 border-sky-100 active:border-b-0 active:translate-y-0.5 shrink-0 transition-all hover:bg-white/80 shadow-sm"
-                                >
-                                    <Volume2 className="w-5 h-5" />
-                                </button>
-                            </div>
+                            <p className="text-base text-slate-600 font-semibold leading-relaxed italic">
+                                "{word.example.vietnamese}"
+                            </p>
                         </div>
                      </div>
                  )}
