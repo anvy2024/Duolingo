@@ -421,19 +421,43 @@ const addWavHeader = (pcmData: Uint8Array, sampleRate: number = 24000): ArrayBuf
     return buffer;
 };
 
-export const getHighQualityAudio = async (text: string): Promise<string> => {
+export const getHighQualityAudio = async (text: string, lang: Language = 'fr'): Promise<string> => {
+    // Voice selection based on language
+    // We use 'Kore' as it's a robust multilingual voice in the 2.5 series.
+    let voiceName = 'Kore'; 
+
+    // CRITICAL FIX: 'systemInstruction' causes 400 ERROR on TTS models. 
+    // We must NOT use it.
+    // To ensure correct language pronunciation (e.g. French "Chat" vs English "Chat"),
+    // we embed the instruction into the prompt text itself.
+    
+    let promptText = text;
+
+    // Force the model to acknowledge the language context
+    if (lang === 'fr') {
+        promptText = `Say in French: "${text}"`;
+    } else if (lang === 'es') {
+        promptText = `Say in Spanish: "${text}"`;
+    } else if (lang === 'zh') {
+        promptText = `Say in Chinese: "${text}"`;
+    } else {
+        // English usually defaults correctly, but explicit is safer
+        promptText = `Say in English: "${text}"`;
+    }
+
     try {
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
             contents: {
-                parts: [{ text: text }]
+                // We send the instructed prompt as the content
+                parts: [{ text: promptText }]
             },
             config: {
+                // STRICTLY NO systemInstruction HERE
                 responseModalities: [Modality.AUDIO],
                 speechConfig: {
                     voiceConfig: {
-                        // Updated to Kore for more natural human-like female voice
-                        prebuiltVoiceConfig: { voiceName: 'Kore' } 
+                        prebuiltVoiceConfig: { voiceName: voiceName } 
                     }
                 }
             }

@@ -502,13 +502,16 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
 
   // --- EXISTING HANDLERS ---
 
-  const handleDelete = (e: React.MouseEvent, id: string) => {
+  const handleDelete = (e: React.MouseEvent | React.TouchEvent, id: string) => {
     e.stopPropagation();
     if (window.confirm(t.confirmDelete)) {
-        onDelete(id);
-        if (selectedWordId === id) {
-            setSelectedWordId(null);
-        }
+        // 1. Close Modal first to prevent UI errors
+        setSelectedWordId(null);
+        
+        // 2. Call delete handler slightly after to ensure clean unmount
+        setTimeout(() => {
+            onDelete(id);
+        }, 50);
     }
   };
 
@@ -1228,7 +1231,12 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                     />
                 </div>
                 
-                <div className="mt-4 flex justify-center gap-4 w-full" onClick={(e) => e.stopPropagation()}>
+                <div 
+                    className="mt-4 flex justify-center gap-4 w-full" 
+                    onClick={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()} // Prevent drag start
+                    onTouchEnd={(e) => e.stopPropagation()} // Prevent drag end (swipe logic)
+                >
                     <button 
                         onClick={(e) => {
                             setSelectedWordId(null);

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppMode, VocabularyWord, Language, NewsArticle } from './types';
 import { generateVocabularyBatch, getHighQualityAudio, GenerationTopic, generateCanadianNews } from './services/geminiService';
@@ -299,7 +298,8 @@ export default function App() {
 
     setAiAudioLoading(true);
     try {
-        const base64Wav = await getHighQualityAudio(text);
+        // Pass selectedLang to ensure AI pronounces in correct language
+        const base64Wav = await getHighQualityAudio(text, selectedLang || 'fr');
         const url = `data:audio/wav;base64,${base64Wav}`;
         
         // 3. Save to RAM Cache
@@ -312,11 +312,13 @@ export default function App() {
         playAudioSource(url, playbackSpeed);
     } catch (err) {
         console.error("AI Audio playback error", err);
-        setError("AI Voice unavailable right now. Try Fast mode.");
+        // SILENT FALLBACK: If AI fails, immediately use Fast mode 
+        // so user isn't blocked by error.
+        speakFast(text);
     } finally {
         setAiAudioLoading(false);
     }
-  }, [aiAudioLoading, playbackSpeed]); 
+  }, [aiAudioLoading, playbackSpeed, selectedLang, speakFast]); 
 
   // 4. Speak Best Available (For Autoplay)
   // Priority: Cached AI -> Fast TTS
@@ -419,8 +421,42 @@ export default function App() {
 
   const handleDeleteWord = (id: string) => {
       if (!selectedLang) return;
+
+      // 1. FIND THE WORD & CLEAN CACHE
+      // We do this first before removing it from state
+      const wordToRemove = vocab.find(w => w.id === id);
+      if (wordToRemove) {
+          let cacheChanged = false;
+          
+          // Delete Target Audio Cache
+          const targetKey = wordToRemove.target.trim();
+          if (audioCache.current.has(targetKey)) {
+              audioCache.current.delete(targetKey);
+              cacheChanged = true;
+          }
+          
+          // Delete Example Audio Cache
+          if (wordToRemove.example && wordToRemove.example.target) {
+             const exampleKey = wordToRemove.example.target.trim();
+             if (audioCache.current.has(exampleKey)) {
+                 audioCache.current.delete(exampleKey);
+                 cacheChanged = true;
+             }
+          }
+
+          // Save updated cache to disk immediately
+          if (cacheChanged) {
+              saveAudioCache(audioCache.current);
+          }
+      }
+
+      // 2. UPDATE STORAGE
       const updated = removeVocabularyWord(id, selectedLang);
+      
+      // 3. UPDATE UI STATE
       setVocab(updated);
+      
+      // 4. Update Current Batch if needed
       if (currentBatch.some(w => w.id === id)) {
           setCurrentBatch(prev => prev.filter(w => w.id !== id));
       }
