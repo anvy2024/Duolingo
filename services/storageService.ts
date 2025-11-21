@@ -350,11 +350,14 @@ export const loadAudioCache = (): Map<string, string> => {
 
 // --- IMPORT / EXPORT FULL BACKUP ---
 
-export const getRawDataForExport = (lang: Language): string => {
+export const getRawDataForExport = (lang: Language, currentAudioCache?: Map<string, string>): string => {
     const vocab = loadVocabularyData(lang);
     const news = loadNewsData(lang);
     const settings = loadSettings();
-    const audioCacheMap = loadAudioCache();
+    
+    // CRITICAL FIX: Use the provided in-memory cache if available.
+    // This ensures we export ALL audio data even if localStorage was full/failed to save.
+    const audioCacheMap = currentAudioCache || loadAudioCache();
     const audioCacheObj = Object.fromEntries(audioCacheMap);
 
     const backup: FullBackup = {
@@ -370,14 +373,14 @@ export const getRawDataForExport = (lang: Language): string => {
     return JSON.stringify(backup, null, 2);
 };
 
-export const importDataFromJson = (jsonString: string, lang: Language): boolean => {
+export const importDataFromJson = (jsonString: string, lang: Language): { success: boolean, audioCache?: Map<string, string> } => {
     try {
         const parsed = JSON.parse(jsonString);
         
         // Check format version
         if (Array.isArray(parsed)) {
             // OLD FORMAT (Just array of words)
-            if (parsed.length > 0 && (!parsed[0].target && !parsed[0].french)) return false;
+            if (parsed.length > 0 && (!parsed[0].target && !parsed[0].french)) return { success: false };
             
             // Standardize old format if needed
             const standardized = parsed.map((w: any) => ({
@@ -391,7 +394,7 @@ export const importDataFromJson = (jsonString: string, lang: Language): boolean 
             
             const merged = appendVocabulary(standardized, lang);
             saveVocabularyData(merged, lang);
-            return true;
+            return { success: true };
         } 
         else if (parsed.version && parsed.vocab) {
             // NEW FULL BACKUP FORMAT
@@ -408,25 +411,30 @@ export const importDataFromJson = (jsonString: string, lang: Language): boolean 
             }
 
             // 3. Merge Audio Cache
+            // We start with what is currently on disk (if any)
+            const mergedCache = loadAudioCache();
+            
             if (backup.audioCache) {
-                 const currentCache = loadAudioCache();
                  Object.entries(backup.audioCache).forEach(([key, val]) => {
-                     currentCache.set(key, val as string);
+                     mergedCache.set(key, val as string);
                  });
-                 saveAudioCache(currentCache);
+                 
+                 // Try to save to disk (Might fail if quota exceeded, but that's okay for now)
+                 saveAudioCache(mergedCache);
             }
 
-            // 4. Merge Settings (Optional - user might want to keep current device settings)
+            // 4. Merge Settings
             if (backup.settings) {
                 saveSettings(backup.settings);
             }
 
-            return true;
+            // Return success AND the merged cache so App can update memory immediately
+            return { success: true, audioCache: mergedCache };
         }
         
-        return false;
+        return { success: false };
     } catch (e) {
         console.error("Invalid JSON for import", e);
-        return false;
+        return { success: false };
     }
 };

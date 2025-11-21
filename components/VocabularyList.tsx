@@ -503,15 +503,16 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   // --- EXISTING HANDLERS ---
 
   const handleDelete = (e: React.MouseEvent | React.TouchEvent, id: string) => {
-    e.stopPropagation();
+    e.stopPropagation(); 
+    
     if (window.confirm(t.confirmDelete)) {
-        // 1. Close Modal first to prevent UI errors
+        // 1. Close Modal immediately
         setSelectedWordId(null);
         
-        // 2. Call delete handler slightly after to ensure clean unmount
+        // 2. Delete after short delay to allow modal to close visually
         setTimeout(() => {
             onDelete(id);
-        }, 50);
+        }, 100);
     }
   };
 
@@ -1234,8 +1235,6 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                 <div 
                     className="mt-4 flex justify-center gap-4 w-full" 
                     onClick={(e) => e.stopPropagation()}
-                    onTouchStart={(e) => e.stopPropagation()} // Prevent drag start
-                    onTouchEnd={(e) => e.stopPropagation()} // Prevent drag end (swipe logic)
                 >
                     <button 
                         onClick={(e) => {

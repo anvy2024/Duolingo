@@ -69,6 +69,8 @@ export default function App() {
       setSwipeAutoplay(settings.swipeAutoplay);
       
       // Refresh Audio Cache from storage (in case import added new audio)
+      // NOTE: If import failed to save to disk (quota), this might load old data.
+      // The import handler explicitly updates current cache to handle that case.
       audioCache.current = loadAudioCache();
   }, [selectedLang]);
 
@@ -724,7 +726,8 @@ export default function App() {
                               <button 
                                 onClick={() => {
                                     if (!selectedLang) return;
-                                    const data = getRawDataForExport(selectedLang);
+                                    // FIX: Pass current in-memory cache to export
+                                    const data = getRawDataForExport(selectedLang, audioCache.current);
                                     const blob = new Blob([data], { type: "application/json" });
                                     const url = URL.createObjectURL(blob);
                                     const a = document.createElement('a');
@@ -756,9 +759,15 @@ export default function App() {
                                     const reader = new FileReader();
                                     reader.onload = (ev) => {
                                         const content = ev.target?.result as string;
-                                        const success = importDataFromJson(content, selectedLang);
-                                        if (success) {
+                                        const result = importDataFromJson(content, selectedLang);
+                                        if (result.success) {
                                             refreshData();
+                                            
+                                            // FIX: Force update memory cache with imported data
+                                            if (result.audioCache) {
+                                                audioCache.current = result.audioCache;
+                                            }
+
                                             alert("Restored successfully! Audio & Settings updated.");
                                             setIsSettingsOpen(false);
                                         } else {
