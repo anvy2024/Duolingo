@@ -4,7 +4,99 @@ import { FontSize } from "../App";
 const getStorageKey = (lang: Language) => `vocab_data_${lang}_v1`;
 const getNewsStorageKey = (lang: Language) => `news_data_${lang}_v1`;
 const SETTINGS_KEY = 'app_settings_v1';
-const AUDIO_CACHE_KEY = 'audio_cache_v1';
+
+// --- INDEXED DB SETUP FOR AUDIO (Unlimited Storage) ---
+const AUDIO_DB_NAME = 'DuolingoAI_AudioDB';
+const AUDIO_STORE_NAME = 'audio_snippets';
+const DB_VERSION = 1;
+
+const openAudioDB = (): Promise<IDBDatabase> => {
+    if (!('indexedDB' in window)) {
+        console.error("This browser does not support IndexedDB");
+        return Promise.reject("IndexedDB not supported");
+    }
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(AUDIO_DB_NAME, DB_VERSION);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+        request.onupgradeneeded = (event) => {
+            const db = (event.target as IDBOpenDBRequest).result;
+            if (!db.objectStoreNames.contains(AUDIO_STORE_NAME)) {
+                db.createObjectStore(AUDIO_STORE_NAME);
+            }
+        };
+    });
+};
+
+export const saveAudioSnippet = async (key: string, base64Url: string) => {
+    try {
+        const db = await openAudioDB();
+        return new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(AUDIO_STORE_NAME, 'readwrite');
+            const store = tx.objectStore(AUDIO_STORE_NAME);
+            store.put(base64Url, key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch (e) {
+        console.error("Failed to save audio to DB", e);
+    }
+};
+
+export const deleteAudioSnippet = async (key: string) => {
+    try {
+        const db = await openAudioDB();
+        return new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(AUDIO_STORE_NAME, 'readwrite');
+            const store = tx.objectStore(AUDIO_STORE_NAME);
+            store.delete(key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch (e) {
+        console.error("Failed to delete audio from DB", e);
+    }
+}
+
+export const loadAllAudioFromDB = async (): Promise<Map<string, string>> => {
+    try {
+        const db = await openAudioDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(AUDIO_STORE_NAME, 'readonly');
+            const store = tx.objectStore(AUDIO_STORE_NAME);
+            const map = new Map<string, string>();
+            
+            const cursorReq = store.openCursor();
+            cursorReq.onsuccess = (e) => {
+                const cursor = (e.target as IDBRequest).result;
+                if (cursor) {
+                    map.set(cursor.key as string, cursor.value as string);
+                    cursor.continue();
+                } else {
+                    resolve(map);
+                }
+            };
+            cursorReq.onerror = () => reject(cursorReq.error);
+        });
+    } catch (e) {
+        console.error("Failed to load audio DB", e);
+        return new Map();
+    }
+};
+
+export const saveBatchAudioToDB = async (entries: [string, string][]) => {
+    if (entries.length === 0) return;
+    const db = await openAudioDB();
+    return new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(AUDIO_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(AUDIO_STORE_NAME);
+        entries.forEach(([key, val]) => {
+            store.put(val, key);
+        });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
 
 // --- TYPES FOR BACKUP ---
 export interface AppSettings {
@@ -321,43 +413,24 @@ export const loadSettings = (): AppSettings => {
     }
 };
 
-// --- AUDIO CACHE PERSISTENCE ---
-// We use a separate storage key because audio data is large
-
-export const saveAudioCache = (cacheMap: Map<string, string>): void => {
-    try {
-        // Convert Map to Object
-        const obj = Object.fromEntries(cacheMap);
-        const str = JSON.stringify(obj);
-        localStorage.setItem(AUDIO_CACHE_KEY, str);
-    } catch (e) {
-        console.warn("Failed to save audio cache (likely quota exceeded)", e);
-        // Optional: Implement Least Recently Used (LRU) clearing strategy here if needed
-    }
-};
-
-export const loadAudioCache = (): Map<string, string> => {
-    try {
-        const str = localStorage.getItem(AUDIO_CACHE_KEY);
-        if (!str) return new Map();
-        const obj = JSON.parse(str);
-        return new Map(Object.entries(obj));
-    } catch (e) {
-        console.error("Failed to load audio cache", e);
-        return new Map();
-    }
-};
-
 // --- IMPORT / EXPORT FULL BACKUP ---
 
-export const getRawDataForExport = (lang: Language, currentAudioCache?: Map<string, string>): string => {
+export const getRawDataForExport = async (lang: Language, currentAudioCache?: Map<string, string>): Promise<string> => {
     const vocab = loadVocabularyData(lang);
     const news = loadNewsData(lang);
     const settings = loadSettings();
     
-    // CRITICAL FIX: Use the provided in-memory cache if available.
-    // This ensures we export ALL audio data even if localStorage was full/failed to save.
-    const audioCacheMap = currentAudioCache || loadAudioCache();
+    // Load ALL audio from IndexedDB to ensure full backup
+    // If in-memory cache is provided, merge it, but DB is source of truth for persistence
+    let audioCacheMap = new Map<string, string>();
+    try {
+        audioCacheMap = await loadAllAudioFromDB();
+    } catch(e) {
+        console.warn("Could not read from DB for export", e);
+        // Fallback to passed memory cache if DB fails
+        if (currentAudioCache) audioCacheMap = currentAudioCache;
+    }
+
     const audioCacheObj = Object.fromEntries(audioCacheMap);
 
     const backup: FullBackup = {
@@ -373,7 +446,7 @@ export const getRawDataForExport = (lang: Language, currentAudioCache?: Map<stri
     return JSON.stringify(backup, null, 2);
 };
 
-export const importDataFromJson = (jsonString: string, lang: Language): { success: boolean, audioCache?: Map<string, string> } => {
+export const importDataFromJson = async (jsonString: string, lang: Language): Promise<{ success: boolean, audioCache?: Map<string, string> }> => {
     try {
         const parsed = JSON.parse(jsonString);
         
@@ -410,22 +483,29 @@ export const importDataFromJson = (jsonString: string, lang: Language): { succes
                  appendNewsData(backup.news, lang);
             }
 
-            // 3. Merge Audio Cache
-            // We start with what is currently on disk (if any)
-            const mergedCache = loadAudioCache();
-            
-            if (backup.audioCache) {
-                 Object.entries(backup.audioCache).forEach(([key, val]) => {
-                     mergedCache.set(key, val as string);
-                 });
-                 
-                 // Try to save to disk (Might fail if quota exceeded, but that's okay for now)
-                 saveAudioCache(mergedCache);
-            }
-
-            // 4. Merge Settings
+            // 3. Merge Settings
             if (backup.settings) {
                 saveSettings(backup.settings);
+            }
+
+            // 4. Merge Audio Cache into IndexedDB (Async)
+            let mergedCache = new Map<string, string>();
+            try {
+                // First load existing
+                mergedCache = await loadAllAudioFromDB();
+                
+                if (backup.audioCache) {
+                     const entries = Object.entries(backup.audioCache);
+                     // Update memory map
+                     entries.forEach(([key, val]) => {
+                         mergedCache.set(key, val as string);
+                     });
+                     
+                     // Bulk save to IndexedDB
+                     await saveBatchAudioToDB(entries as [string, string][]);
+                }
+            } catch(e) {
+                console.error("Failed to merge audio to DB", e);
             }
 
             // Return success AND the merged cache so App can update memory immediately

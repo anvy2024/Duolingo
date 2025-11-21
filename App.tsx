@@ -1,18 +1,25 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppMode, VocabularyWord, Language, NewsArticle } from './types';
 import { generateVocabularyBatch, getHighQualityAudio, GenerationTopic, generateCanadianNews } from './services/geminiService';
-import { loadVocabularyData, appendVocabulary, updateWordStatus, removeVocabularyWord, getRawDataForExport, importDataFromJson, loadNewsData, appendNewsData, deleteNewsArticle, editVocabularyWord, loadSettings, saveSettings, loadAudioCache, saveAudioCache } from './services/storageService';
+import { loadVocabularyData, appendVocabulary, updateWordStatus, removeVocabularyWord, getRawDataForExport, importDataFromJson, loadNewsData, appendNewsData, deleteNewsArticle, editVocabularyWord, loadSettings, saveSettings, loadAllAudioFromDB, saveAudioSnippet, deleteAudioSnippet } from './services/storageService';
 import { Dashboard } from './components/Dashboard';
 import { StudyList } from './components/StudyList';
 import { Flashcard } from './components/Flashcard';
 import { VocabularyList, FilterType } from './components/VocabularyList';
 import { NewsReader } from './components/NewsReader';
-import { ChevronLeft, ChevronRight, CheckCircle, Loader2, X, Download, Upload, AlertTriangle, Globe, BookOpen, ArrowRight, LogOut, Volume2, VolumeX, Type } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Loader2, X, Download, Upload, AlertTriangle, Globe, BookOpen, ArrowRight, LogOut, Volume2, VolumeX, Type, Lock, KeyRound } from 'lucide-react';
 import { TRANSLATIONS } from './constants/translations';
 
 export type FontSize = 'normal' | 'large' | 'huge';
 
 export default function App() {
+  // --- AUTHENTICATION STATE ---
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+      return localStorage.getItem('duo_ai_auth_v1') === 'true';
+  });
+  const [passwordInput, setPasswordInput] = useState('');
+  const [authError, setAuthError] = useState(false);
+
   // State for Language
   const [selectedLang, setSelectedLang] = useState<Language | null>(null);
 
@@ -41,12 +48,28 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // ROBUST CACHING: Use Map for better performance with long strings
-  // Initialize from LocalStorage
-  const audioCache = useRef<Map<string, string>>(loadAudioCache());
+  // Initialize empty, load from IndexedDB on mount
+  const audioCache = useRef<Map<string, string>>(new Map());
   
   const [loading, setLoading] = useState(false);
   const [aiAudioLoading, setAiAudioLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isAudioDbLoaded, setIsAudioDbLoaded] = useState(false);
+
+  // Initialize Audio DB
+  useEffect(() => {
+      const initAudio = async () => {
+          try {
+              const map = await loadAllAudioFromDB();
+              audioCache.current = map;
+              setIsAudioDbLoaded(true);
+              console.log(`Loaded ${map.size} audio clips from persistent storage.`);
+          } catch (e) {
+              console.error("Failed to load audio DB", e);
+          }
+      };
+      initAudio();
+  }, []);
 
   // Persist settings changes
   useEffect(() => {
@@ -67,11 +90,6 @@ export default function App() {
       setFontSize(settings.fontSize);
       setPlaybackSpeed(settings.playbackSpeed);
       setSwipeAutoplay(settings.swipeAutoplay);
-      
-      // Refresh Audio Cache from storage (in case import added new audio)
-      // NOTE: If import failed to save to disk (quota), this might load old data.
-      // The import handler explicitly updates current cache to handle that case.
-      audioCache.current = loadAudioCache();
   }, [selectedLang]);
 
   useEffect(() => {
@@ -276,15 +294,15 @@ export default function App() {
 
   }, [selectedLang, playbackSpeed, speakNative]);
 
-  // 3. AI Speech (Persistent Cache)
+  // 3. AI Speech (Persistent Cache with IndexedDB)
   const speakAI = useCallback(async (text: string) => {
-    // 1. Check Cache (RAM & LocalStorage)
+    // 1. Check In-Memory Cache
     const cacheKey = text.trim();
     
     if (audioCache.current.has(cacheKey)) {
         const cachedUrl = audioCache.current.get(cacheKey);
         if (cachedUrl) {
-            console.log("Playing from Persistent Cache", cacheKey);
+            console.log("Playing from RAM/DB Cache", cacheKey);
             playAudioSource(cachedUrl, playbackSpeed);
             return;
         }
@@ -307,15 +325,14 @@ export default function App() {
         // 3. Save to RAM Cache
         audioCache.current.set(cacheKey, url);
         
-        // 4. Save to Persistent Cache (LocalStorage)
-        saveAudioCache(audioCache.current);
+        // 4. Save to IndexedDB (Persistent)
+        await saveAudioSnippet(cacheKey, url);
         
         // 5. Play
         playAudioSource(url, playbackSpeed);
     } catch (err) {
         console.error("AI Audio playback error", err);
         // SILENT FALLBACK: If AI fails, immediately use Fast mode 
-        // so user isn't blocked by error.
         speakFast(text);
     } finally {
         setAiAudioLoading(false);
@@ -338,7 +355,28 @@ export default function App() {
       speakFast(text, onEnd);
   }, [playbackSpeed, speakFast]);
 
-  // Main Logic Functions
+  // --- AUTH HANDLERS ---
+  const handleLogin = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (passwordInput === '9912110') {
+          setIsAuthenticated(true);
+          localStorage.setItem('duo_ai_auth_v1', 'true');
+          setAuthError(false);
+      } else {
+          setAuthError(true);
+          setPasswordInput('');
+      }
+  };
+
+  const handleLockApp = () => {
+      setIsAuthenticated(false);
+      localStorage.removeItem('duo_ai_auth_v1');
+      setIsSettingsOpen(false);
+      setPasswordInput('');
+      setAuthError(false);
+  };
+
+  // --- MAIN LOGIC ---
   const handleStartNew = async (topic: GenerationTopic = 'general') => {
     if (!selectedLang) return;
     setLoading(true);
@@ -428,27 +466,20 @@ export default function App() {
       // We do this first before removing it from state
       const wordToRemove = vocab.find(w => w.id === id);
       if (wordToRemove) {
-          let cacheChanged = false;
-          
-          // Delete Target Audio Cache
+          // Delete Target Audio Cache from DB and RAM
           const targetKey = wordToRemove.target.trim();
           if (audioCache.current.has(targetKey)) {
               audioCache.current.delete(targetKey);
-              cacheChanged = true;
+              deleteAudioSnippet(targetKey);
           }
           
-          // Delete Example Audio Cache
+          // Delete Example Audio Cache from DB and RAM
           if (wordToRemove.example && wordToRemove.example.target) {
              const exampleKey = wordToRemove.example.target.trim();
              if (audioCache.current.has(exampleKey)) {
                  audioCache.current.delete(exampleKey);
-                 cacheChanged = true;
+                 deleteAudioSnippet(exampleKey);
              }
-          }
-
-          // Save updated cache to disk immediately
-          if (cacheChanged) {
-              saveAudioCache(audioCache.current);
           }
       }
 
@@ -507,7 +538,101 @@ export default function App() {
            setCurrentBatch(prev => prev.map(w => w.id === id ? { ...w, isFavorite: status } : w));
       }
   };
+  
+  const handleExport = async () => {
+      if (!selectedLang) return;
+      try {
+          // Use await for async IndexedDB read
+          const data = await getRawDataForExport(selectedLang, audioCache.current);
+          const blob = new Blob([data], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `full_backup_${selectedLang}_${Date.now()}.json`;
+          a.click();
+      } catch (e) {
+          alert("Export failed: " + e);
+      }
+  }
+  
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !selectedLang) return;
+        
+        setLoading(true);
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+            try {
+                const content = ev.target?.result as string;
+                const result = await importDataFromJson(content, selectedLang);
+                
+                if (result.success) {
+                    refreshData();
+                    
+                    // Update memory cache from import result
+                    if (result.audioCache) {
+                        audioCache.current = result.audioCache;
+                    }
+                    
+                    alert("Restored successfully! Audio recovered from backup.");
+                    setIsSettingsOpen(false);
+                } else {
+                    alert("Invalid file format.");
+                }
+            } catch (err) {
+                alert("Error restoring backup.");
+                console.error(err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        reader.readAsText(file);
+  }
 
+  // --- RENDER: LOCK SCREEN ---
+  if (!isAuthenticated) {
+      return (
+          <div className="h-[100dvh] bg-gray-100 flex flex-col items-center justify-center p-6 font-sans text-slate-700">
+              <div className="w-full max-w-xs bg-white rounded-3xl shadow-2xl p-8 border-2 border-slate-200 text-center animate-in zoom-in duration-300">
+                  <div className="bg-sky-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-sky-200">
+                      <Lock className="w-10 h-10 text-sky-500" />
+                  </div>
+                  <h1 className="text-3xl font-black text-slate-700 mb-2 tracking-tight">Duolingo AI</h1>
+                  <p className="text-slate-400 font-bold mb-8 text-sm uppercase tracking-wide">Security Lock</p>
+                  
+                  <form onSubmit={handleLogin} className="space-y-4">
+                      <div className="relative">
+                           <KeyRound className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-300 w-5 h-5" />
+                           <input 
+                                type="password" 
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={passwordInput}
+                                onChange={(e) => {
+                                    setAuthError(false);
+                                    setPasswordInput(e.target.value);
+                                }}
+                                placeholder="Passcode"
+                                className={`w-full pl-12 pr-4 py-4 bg-slate-50 border-2 rounded-2xl outline-none font-black text-center text-2xl tracking-widest transition-all ${authError ? 'border-rose-300 text-rose-500 bg-rose-50' : 'border-slate-200 text-slate-700 focus:border-sky-500'}`}
+                                autoFocus
+                           />
+                      </div>
+                      
+                      {authError && <p className="text-xs font-bold text-rose-500 animate-pulse">Incorrect Passcode</p>}
+                      
+                      <button 
+                        type="submit"
+                        className="w-full py-4 bg-sky-500 hover:bg-sky-400 text-white rounded-2xl font-extrabold uppercase tracking-wide border-b-4 border-sky-600 active:border-b-0 active:translate-y-1 transition-all shadow-lg shadow-sky-200"
+                      >
+                          Unlock
+                      </button>
+                  </form>
+              </div>
+          </div>
+      )
+  }
+
+  // --- RENDER: APP ---
   return (
     <div className="h-[100dvh] overflow-hidden bg-gray-100 flex flex-col font-sans text-slate-700">
       
@@ -515,7 +640,7 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center text-white">
             <Loader2 className="w-16 h-16 animate-spin mb-4 text-sky-400" />
             <p className="text-2xl font-black tracking-wide animate-pulse">
-                {mode === AppMode.GENERATING ? 'AI is thinking...' : 'Loading...'}
+                {mode === AppMode.GENERATING ? 'AI is thinking...' : 'Processing Backup...'}
             </p>
             {mode === AppMode.GENERATING && (
                 <p className="text-sm text-white/70 mt-2 max-w-xs text-center">Creating unique vocabulary for you...</p>
@@ -654,7 +779,7 @@ export default function App() {
       {/* SETTINGS MODAL */}
       {isSettingsOpen && (
           <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-              <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border-2 border-slate-200">
+              <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border-2 border-slate-200 max-h-[90vh] overflow-y-auto custom-scrollbar">
                   <div className="flex justify-between items-center mb-6">
                       <h3 className="text-xl font-black text-slate-700">Settings</h3>
                       <button onClick={() => setIsSettingsOpen(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X className="w-5 h-5 text-slate-500" /></button>
@@ -724,17 +849,7 @@ export default function App() {
                           <p className="font-bold text-slate-600 mb-2">Full Backup (Audio + Data)</p>
                           <div className="grid grid-cols-2 gap-3">
                               <button 
-                                onClick={() => {
-                                    if (!selectedLang) return;
-                                    // FIX: Pass current in-memory cache to export
-                                    const data = getRawDataForExport(selectedLang, audioCache.current);
-                                    const blob = new Blob([data], { type: "application/json" });
-                                    const url = URL.createObjectURL(blob);
-                                    const a = document.createElement('a');
-                                    a.href = url;
-                                    a.download = `full_backup_${selectedLang}_${Date.now()}.json`;
-                                    a.click();
-                                }}
+                                onClick={handleExport}
                                 className="flex flex-col items-center justify-center p-3 bg-white border-2 border-slate-200 rounded-xl hover:bg-sky-50 hover:border-sky-200 transition-all active:scale-95"
                               >
                                   <Download className="w-6 h-6 text-sky-500 mb-1" />
@@ -753,35 +868,21 @@ export default function App() {
                                 ref={fileInputRef}
                                 className="hidden"
                                 accept=".json"
-                                onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (!file || !selectedLang) return;
-                                    const reader = new FileReader();
-                                    reader.onload = (ev) => {
-                                        const content = ev.target?.result as string;
-                                        const result = importDataFromJson(content, selectedLang);
-                                        if (result.success) {
-                                            refreshData();
-                                            
-                                            // FIX: Force update memory cache with imported data
-                                            if (result.audioCache) {
-                                                audioCache.current = result.audioCache;
-                                            }
-
-                                            alert("Restored successfully! Audio & Settings updated.");
-                                            setIsSettingsOpen(false);
-                                        } else {
-                                            alert("Invalid file format.");
-                                        }
-                                    };
-                                    reader.readAsText(file);
-                                }}
+                                onChange={handleImport}
                               />
                           </div>
                           <p className="text-[10px] text-slate-400 mt-2 text-center leading-tight">
                               Saves all your vocab, news, settings, and *downloaded AI voices* so you can play offline.
                           </p>
                       </div>
+
+                      <button 
+                        onClick={handleLockApp}
+                        className="w-full mt-2 py-3 bg-rose-50 text-rose-500 rounded-2xl font-extrabold border-2 border-rose-100 hover:bg-rose-100 transition-all flex items-center justify-center gap-2"
+                      >
+                          <Lock className="w-5 h-5" />
+                          Lock App
+                      </button>
                   </div>
               </div>
           </div>
