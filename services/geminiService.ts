@@ -21,7 +21,12 @@ export type GenerationTopic = 'general' | 'common-verbs' | 'irregular-verbs';
 
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
 
-export const generateVocabularyBatch = async (existingWords: string[] = [], topic: GenerationTopic = 'general', lang: Language): Promise<VocabularyWord[]> => {
+export const generateVocabularyBatch = async (
+    existingWords: string[] = [], 
+    topic: GenerationTopic = 'general', 
+    lang: Language,
+    count: number = 10
+): Promise<VocabularyWord[]> => {
   // IMPROVED: Send a larger, shuffled sample of existing words to the model to avoid repetition
   // We prioritize sending the most recently learned words + a random sample of older ones
   const recentWords = existingWords.slice(-50);
@@ -46,11 +51,11 @@ export const generateVocabularyBatch = async (existingWords: string[] = [], topi
   
   let specificInstruction = "";
   if (topic === 'common-verbs') {
-    specificInstruction = `Generate 10 useful ${targetLang} verbs (infinitive) for ${level} students.`;
+    specificInstruction = `Generate ${count} useful ${targetLang} verbs (infinitive) for ${level} students.`;
   } else if (topic === 'irregular-verbs') {
-    specificInstruction = `Generate 10 common irregular ${targetLang} verbs for ${level} students.`;
+    specificInstruction = `Generate ${count} common irregular ${targetLang} verbs for ${level} students.`;
   } else {
-    specificInstruction = `Generate 10 DISTINCT, useful ${targetLang} vocabulary words suitable for ${level} level (mix of nouns, verbs, adjectives).`;
+    specificInstruction = `Generate ${count} DISTINCT, useful ${targetLang} vocabulary words suitable for ${level} level (mix of nouns, verbs, adjectives).`;
   }
 
   // Logic for Vietnamese Pronunciation

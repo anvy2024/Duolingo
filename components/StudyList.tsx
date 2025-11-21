@@ -56,6 +56,74 @@ export const StudyList: React.FC<StudyListProps> = ({
       };
   }, []);
 
+  const handleNext = (animate = true) => {
+      if (currentIndex < words.length - 1) {
+          const nextIndex = currentIndex + 1;
+          setCurrentIndex(nextIndex);
+          if (swipeAutoplay) {
+              // Use Best Available (Cached AI or Fast)
+              setTimeout(() => speakBestAvailable(words[nextIndex].target), 400);
+          }
+      }
+  };
+
+  const handlePrev = (animate = true) => {
+      if (currentIndex > 0) {
+          const prevIndex = currentIndex - 1;
+          setCurrentIndex(prevIndex);
+          if (swipeAutoplay) {
+              // Use Best Available (Cached AI or Fast)
+              setTimeout(() => speakBestAvailable(words[prevIndex].target), 400);
+          }
+      }
+  };
+
+  const animateSwipe = (direction: 'left' | 'right') => {
+      setIsAnimating(true);
+      // Fly out animation
+      setSwipeX(direction === 'left' ? -500 : 500); 
+      
+      setTimeout(() => {
+          // Actual data change
+          if (direction === 'left') {
+              handleNext(false); // False = don't trigger basic transition, we handle it
+          } else {
+              handlePrev(false);
+          }
+          
+          // Reset position instantly (while invisible or swapped)
+          setSwipeX(0);
+          setIsAnimating(false);
+      }, 200); // Match CSS duration
+  };
+
+  const resetSwipe = () => {
+      setSwipeX(0);
+  };
+
+  // --- KEYBOARD NAVIGATION (Desktop) ---
+  useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+          // Disable keyboard nav if auto-playing or currently animating
+          if (isAutoPlaying || isAnimating) return;
+
+          if (e.key === 'ArrowLeft') {
+              if (currentIndex > 0) {
+                  animateSwipe('right');
+              }
+          } else if (e.key === 'ArrowRight') {
+              if (currentIndex < words.length - 1) {
+                  animateSwipe('left');
+              }
+          } else if (e.key === 'Escape') {
+              onBackToHome();
+          }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentIndex, isAutoPlaying, isAnimating, words.length, onBackToHome]);
+
   // --- SWIPE HANDLERS ---
   const onTouchStart = (e: React.TouchEvent) => {
       if (isAutoPlaying || isAnimating) return;
@@ -95,29 +163,6 @@ export const StudyList: React.FC<StudyListProps> = ({
       startXRef.current = null;
   };
 
-  const animateSwipe = (direction: 'left' | 'right') => {
-      setIsAnimating(true);
-      // Fly out animation
-      setSwipeX(direction === 'left' ? -500 : 500); 
-      
-      setTimeout(() => {
-          // Actual data change
-          if (direction === 'left') {
-              handleNext(false); // False = don't trigger basic transition, we handle it
-          } else {
-              handlePrev(false);
-          }
-          
-          // Reset position instantly (while invisible or swapped)
-          setSwipeX(0);
-          setIsAnimating(false);
-      }, 200); // Match CSS duration
-  };
-
-  const resetSwipe = () => {
-      setSwipeX(0);
-  };
-
   const startAutoPlay = () => {
       if (words.length === 0) return;
       setIsAutoPlaying(true);
@@ -140,28 +185,6 @@ export const StudyList: React.FC<StudyListProps> = ({
           setIsPaused(true);
           if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
           window.speechSynthesis.cancel();
-      }
-  };
-
-  const handleNext = (animate = true) => {
-      if (currentIndex < words.length - 1) {
-          const nextIndex = currentIndex + 1;
-          setCurrentIndex(nextIndex);
-          if (swipeAutoplay) {
-              // Use Best Available (Cached AI or Fast)
-              setTimeout(() => speakBestAvailable(words[nextIndex].target), 400);
-          }
-      }
-  };
-
-  const handlePrev = (animate = true) => {
-      if (currentIndex > 0) {
-          const prevIndex = currentIndex - 1;
-          setCurrentIndex(prevIndex);
-          if (swipeAutoplay) {
-              // Use Best Available (Cached AI or Fast)
-              setTimeout(() => speakBestAvailable(words[prevIndex].target), 400);
-          }
       }
   };
 
@@ -291,13 +314,14 @@ export const StudyList: React.FC<StudyListProps> = ({
 
       {/* Flashcard View with Physics Swipe */}
       <div 
-        className="flex-1 flex flex-col items-center justify-center p-4 relative overflow-hidden"
+        className="flex-1 flex flex-col items-center justify-center p-4 relative overflow-hidden outline-none"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
+        tabIndex={0}
       >
          {!isAutoPlaying && (
-             <div className="absolute top-1/2 left-2 transform -translate-y-1/2 z-10">
+             <div className="absolute top-1/2 left-2 transform -translate-y-1/2 z-10 hidden md:block">
                  <button 
                     onClick={() => animateSwipe('right')} 
                     disabled={currentIndex === 0}
@@ -309,7 +333,7 @@ export const StudyList: React.FC<StudyListProps> = ({
          )}
          
          {!isAutoPlaying && (
-             <div className="absolute top-1/2 right-2 transform -translate-y-1/2 z-10">
+             <div className="absolute top-1/2 right-2 transform -translate-y-1/2 z-10 hidden md:block">
                  <button 
                     onClick={() => animateSwipe('left')} 
                     disabled={currentIndex === words.length - 1}

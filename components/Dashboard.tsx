@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RotateCw, GraduationCap, Sparkles, Library, Zap, AlertCircle, Heart, CheckCircle, Settings, ExternalLink, Newspaper, Book, Maximize, Minimize, Share } from 'lucide-react';
+import { RotateCw, GraduationCap, Sparkles, Library, Zap, AlertCircle, Heart, CheckCircle, Settings, ExternalLink, Newspaper, Book, Maximize, Minimize, Share, Plus, Minus, Volume2, X } from 'lucide-react';
 import { GenerationTopic } from '../services/geminiService';
 import { Language } from '../types';
 import { TRANSLATIONS } from '../constants/translations';
@@ -9,7 +9,7 @@ interface DashboardProps {
   masteredCount: number;
   favoriteCount: number;
   currentLang: Language;
-  onStartNew: (topic: GenerationTopic) => void;
+  onStartNew: (topic: GenerationTopic, count: number, autoFetchAudio: boolean, autoFetchExampleAudio: boolean) => void;
   onStartReview: () => void;
   onStartFavorites: () => void;
   onStartMastered: () => void;
@@ -28,6 +28,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isIOS, setIsIOS] = useState(false);
   const [isStandalone, setIsStandalone] = useState(true);
   
+  // Config Modal State
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+  const [selectedTopic, setSelectedTopic] = useState<GenerationTopic | null>(null);
+  const [wordCount, setWordCount] = useState(10);
+  const [autoFetchAudio, setAutoFetchAudio] = useState(false);
+  const [autoFetchExampleAudio, setAutoFetchExampleAudio] = useState(false);
+
   let langName = 'Français';
   let langColor = 'bg-blue-500';
   if (currentLang === 'en') { langName = 'English'; langColor = 'bg-blue-600'; }
@@ -60,6 +67,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
           if (document.exitFullscreen) {
               document.exitFullscreen();
           }
+      }
+  };
+
+  const handleTopicClick = (topic: GenerationTopic) => {
+      setSelectedTopic(topic);
+      setIsConfigModalOpen(true);
+  };
+
+  const handleStartConfig = () => {
+      if (selectedTopic) {
+          onStartNew(selectedTopic, wordCount, autoFetchAudio, autoFetchExampleAudio);
+          setIsConfigModalOpen(false);
       }
   };
 
@@ -151,7 +170,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <h3 className="font-extrabold text-slate-700 text-lg px-1 uppercase tracking-wider">{t.newLesson}</h3>
                 
                 <button 
-                    onClick={() => onStartNew('general')}
+                    onClick={() => handleTopicClick('general')}
                     className="w-full bg-green-500 hover:bg-green-400 text-white border-green-600 border-b-4 active:border-b-0 active:mt-1 rounded-2xl p-4 flex items-center gap-4 transition-all group"
                 >
                     <div className="bg-white/20 p-3 rounded-xl">
@@ -165,7 +184,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                 <div className="grid grid-cols-2 gap-4">
                     <button 
-                        onClick={() => onStartNew('common-verbs')}
+                        onClick={() => handleTopicClick('common-verbs')}
                         className="bg-sky-500 hover:bg-sky-400 text-white border-sky-600 border-b-4 active:border-b-0 active:mt-1 rounded-2xl p-4 flex flex-col items-center text-center gap-2 transition-all"
                     >
                          <div className="bg-white/20 p-2 rounded-xl">
@@ -175,7 +194,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </button>
 
                     <button 
-                        onClick={() => onStartNew('irregular-verbs')}
+                        onClick={() => handleTopicClick('irregular-verbs')}
                         className="bg-purple-500 hover:bg-purple-400 text-white border-purple-600 border-b-4 active:border-b-0 active:mt-1 rounded-2xl p-4 flex flex-col items-center text-center gap-2 transition-all"
                     >
                         <div className="bg-white/20 p-2 rounded-xl">
@@ -256,6 +275,94 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </a>
             </div>
         </div>
+
+        {/* CONFIG MODAL */}
+        {isConfigModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-6 animate-in fade-in duration-200">
+                <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border-2 border-slate-200 max-h-[90vh] overflow-y-auto custom-scrollbar">
+                     <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-black text-slate-700">Lesson Setup</h3>
+                        <button onClick={() => setIsConfigModalOpen(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200">
+                            <X className="w-5 h-5 text-slate-500" />
+                        </button>
+                    </div>
+
+                    <div className="space-y-6">
+                        {/* Quantity Input */}
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                             <label className="block text-xs font-bold text-slate-400 uppercase mb-3">
+                                 Number of words to generate
+                             </label>
+                             <div className="flex items-center gap-4">
+                                 <button 
+                                    onClick={() => setWordCount(Math.max(1, wordCount - 1))}
+                                    className="p-3 bg-white rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-100 active:scale-95"
+                                 >
+                                     <Minus className="w-5 h-5" />
+                                 </button>
+                                 
+                                 <div className="flex-1 text-center">
+                                     <span className="text-3xl font-black text-slate-700">{wordCount}</span>
+                                 </div>
+
+                                 <button 
+                                    onClick={() => setWordCount(Math.min(20, wordCount + 1))}
+                                    className="p-3 bg-white rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-100 active:scale-95"
+                                 >
+                                     <Plus className="w-5 h-5" />
+                                 </button>
+                             </div>
+                        </div>
+
+                        {/* Auto Audio Word Toggle */}
+                        <div 
+                            className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between cursor-pointer"
+                            onClick={() => setAutoFetchAudio(!autoFetchAudio)}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-xl ${autoFetchAudio ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-400'}`}>
+                                    <Volume2 className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <p className="font-bold text-slate-700 text-sm">Auto-fetch Word Audio</p>
+                                    <p className="text-xs text-slate-400 font-bold">Save time later</p>
+                                </div>
+                            </div>
+                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${autoFetchAudio ? 'bg-indigo-500 border-indigo-500' : 'bg-white border-slate-300'}`}>
+                                {autoFetchAudio && <CheckCircle className="w-4 h-4 text-white" />}
+                            </div>
+                        </div>
+
+                        {/* Auto Audio Example Toggle */}
+                        <div 
+                            className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between cursor-pointer"
+                            onClick={() => setAutoFetchExampleAudio(!autoFetchExampleAudio)}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-xl ${autoFetchExampleAudio ? 'bg-purple-100 text-purple-600' : 'bg-slate-200 text-slate-400'}`}>
+                                    <Sparkles className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <p className="font-bold text-slate-700 text-sm">Auto-fetch Example Audio</p>
+                                    <p className="text-xs text-slate-400 font-bold">Sentences (Takes longer)</p>
+                                </div>
+                            </div>
+                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${autoFetchExampleAudio ? 'bg-purple-500 border-purple-500' : 'bg-white border-slate-300'}`}>
+                                {autoFetchExampleAudio && <CheckCircle className="w-4 h-4 text-white" />}
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={handleStartConfig}
+                            className="w-full py-4 bg-green-500 text-white rounded-2xl font-extrabold uppercase tracking-wide border-green-600 border-b-4 active:border-b-0 active:translate-y-1 transition-all shadow-lg shadow-green-200 flex items-center justify-center gap-2"
+                        >
+                            <Sparkles className="w-5 h-5" />
+                            Start Generating
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
     </div>
   );
 };

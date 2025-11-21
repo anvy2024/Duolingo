@@ -117,6 +117,41 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
 
   const selectedWord = selectedWordId ? filteredWords.find(w => w.id === selectedWordId) : null;
 
+  // --- GLOBAL KEYBOARD SHORTCUTS ---
+  useEffect(() => {
+      const handleGlobalKeyDown = (e: KeyboardEvent) => {
+          // If modal is active, let the modal specific handler take care of navigation
+          // But we might want to handle Escape if the modal handler is not focused? 
+          // Actually, the modal handler is attached when selectedWordId is present.
+          // So here we handle general view navigation.
+          
+          if (selectedWordId) return; // Handled by modal effect
+
+          if (e.key === 'Escape') {
+              if (viewMode !== 'LIST') {
+                  setViewMode('LIST');
+              } else {
+                  onBack();
+              }
+          }
+          
+          // Game Number Shortcuts (1-4)
+          if (!isGameOver && !selectedAnswer && (viewMode === 'GAME_QUIZ' || viewMode === 'GAME_FILL' || viewMode === 'GAME_AUDIO') && gameQuestions.length > 0) {
+              if (['1', '2', '3', '4'].includes(e.key)) {
+                  const idx = parseInt(e.key) - 1;
+                  const options = gameQuestions[questionIndex].options;
+                  if (options && options[idx]) {
+                      handleAnswer(options[idx].id);
+                  }
+              }
+          }
+      };
+
+      window.addEventListener('keydown', handleGlobalKeyDown);
+      return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [selectedWordId, viewMode, isGameOver, gameQuestions, questionIndex, onBack, selectedAnswer]);
+
+
   // --- AUTO PLAY LOGIC ---
   const startAutoPlay = () => {
       if (filteredWords.length === 0) return;
@@ -206,21 +241,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
     };
   }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue, speakBestAvailable, playDelay]);
 
-  // --- MODAL SWIPE LOGIC ---
-  const animateSwipe = (direction: 'left' | 'right') => {
-      if (!selectedWordId) return;
-      setIsAnimating(true);
-      setSwipeX(direction === 'left' ? -500 : 500);
-
-      setTimeout(() => {
-          if (direction === 'left') handleNextWord();
-          else handlePrevWord();
-          
-          setSwipeX(0);
-          setIsAnimating(false);
-      }, 200);
-  };
-
+  // --- MODAL SWIPE & KEYBOARD LOGIC ---
   const handleNextWord = () => {
       if (!selectedWordId) return;
       const idx = filteredWords.findIndex(w => w.id === selectedWordId);
@@ -244,6 +265,48 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
           }
       }
   }
+
+  const animateSwipe = (direction: 'left' | 'right') => {
+      if (!selectedWordId) return;
+      setIsAnimating(true);
+      setSwipeX(direction === 'left' ? -500 : 500);
+
+      setTimeout(() => {
+          if (direction === 'left') handleNextWord();
+          else handlePrevWord();
+          
+          setSwipeX(0);
+          setIsAnimating(false);
+      }, 200);
+  };
+
+  // Add Keyboard support for Modal
+  useEffect(() => {
+      if (!selectedWordId) return;
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+          if (isAnimating) return;
+
+          if (e.key === 'ArrowLeft') {
+             // Previous (Right swipe animation brings prev card from left)
+             const idx = filteredWords.findIndex(w => w.id === selectedWordId);
+             if (idx > 0) {
+                 animateSwipe('right');
+             }
+          } else if (e.key === 'ArrowRight') {
+             // Next (Left swipe animation brings next card from right)
+             const idx = filteredWords.findIndex(w => w.id === selectedWordId);
+             if (idx < filteredWords.length - 1) {
+                 animateSwipe('left');
+             }
+          } else if (e.key === 'Escape') {
+              setSelectedWordId(null);
+          }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedWordId, isAnimating, filteredWords]);
 
   const onTouchStart = (e: React.TouchEvent) => {
       if (isAnimating) return;
@@ -981,7 +1044,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                      </div>
 
                      <div className="grid grid-cols-1 gap-3">
-                         {gameQuestions[questionIndex].options.map((opt: any) => {
+                         {gameQuestions[questionIndex].options.map((opt: any, index: number) => {
                              const isSelected = selectedAnswer === opt.id;
                              const isTarget = opt.id === gameQuestions[questionIndex].target.id;
                              
@@ -997,8 +1060,11 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                                     key={opt.id}
                                     onClick={() => handleAnswer(opt.id)}
                                     disabled={!!selectedAnswer}
-                                    className={`p-4 rounded-2xl border-2 border-b-4 font-bold text-lg transition-all ${btnClass} ${!selectedAnswer && 'hover:bg-sky-50 active:border-b-2 active:translate-y-[2px]'}`}
+                                    className={`relative p-4 rounded-2xl border-2 border-b-4 font-bold text-lg transition-all ${btnClass} ${!selectedAnswer && 'hover:bg-sky-50 active:border-b-2 active:translate-y-[2px]'}`}
                                  >
+                                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-black text-slate-300 border border-slate-200 rounded-md px-1.5 py-0.5 hidden md:block">
+                                         {index + 1}
+                                     </span>
                                      {viewMode === 'GAME_QUIZ' ? opt.vietnamese : opt.target}
                                  </button>
                              )
@@ -1197,11 +1263,12 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
       {/* SELECTED WORD MODAL WITH SWIPE */}
       {selectedWord && (
         <div 
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 cursor-auto overflow-hidden"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 cursor-auto overflow-hidden outline-none"
             onClick={() => setSelectedWordId(null)}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
+            tabIndex={0} // Enable focus for key events
         >
             {/* Navigation Arrows (Visual cues for Desktop/Tablet) */}
             <button 

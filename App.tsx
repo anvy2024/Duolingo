@@ -52,6 +52,7 @@ export default function App() {
   const audioCache = useRef<Map<string, string>>(new Map());
   
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState(''); // Add loading message state
   const [aiAudioLoading, setAiAudioLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAudioDbLoaded, setIsAudioDbLoaded] = useState(false);
@@ -377,14 +378,17 @@ export default function App() {
   };
 
   // --- MAIN LOGIC ---
-  const handleStartNew = async (topic: GenerationTopic = 'general') => {
+  const handleStartNew = async (topic: GenerationTopic = 'general', count: number = 10, autoFetchAudio: boolean = false, autoFetchExampleAudio: boolean = false) => {
     if (!selectedLang) return;
     setLoading(true);
+    setLoadingMessage(mode === AppMode.GENERATING ? 'AI is thinking...' : 'Generating Vocabulary...');
     setError(null);
     setMode(AppMode.GENERATING);
+    
     try {
       const existingWords = vocab.map(v => v.target);
-      const generatedWords = await generateVocabularyBatch(existingWords, topic, selectedLang);
+      // 1. GENERATE TEXT
+      const generatedWords = await generateVocabularyBatch(existingWords, topic, selectedLang, count);
       
       const distinctNewWords = generatedWords.filter(nw => {
           const normalizedNew = nw.target.trim().toLowerCase();
@@ -393,6 +397,69 @@ export default function App() {
 
       if (distinctNewWords.length === 0) {
           throw new Error("AI generated words that you already know. I filtered them out. Please try again!");
+      }
+      
+      // 2. AUTO DOWNLOAD AUDIO (Background Loop)
+      if (autoFetchAudio || autoFetchExampleAudio) {
+          let completedOps = 0;
+          // Estimate total operations
+          const totalOps = (autoFetchAudio ? distinctNewWords.length : 0) + (autoFetchExampleAudio ? distinctNewWords.length : 0);
+          
+          setLoadingMessage(`Downloading AI Audio (0/${totalOps})...`);
+          
+          // We process sequentially to avoid hitting rate limits instantly
+          for (let i = 0; i < distinctNewWords.length; i++) {
+              const word = distinctNewWords[i];
+              
+              // 2a. Fetch Word Target Audio
+              if (autoFetchAudio) {
+                  try {
+                      const cacheKey = word.target.trim();
+                      // Only fetch if not already in cache
+                      if (!audioCache.current.has(cacheKey)) {
+                            completedOps++;
+                            setLoadingMessage(`Downloading Audio (${completedOps}/${totalOps})...`);
+                            
+                            const base64Wav = await getHighQualityAudio(word.target, selectedLang);
+                            const url = `data:audio/wav;base64,${base64Wav}`;
+                            
+                            // Save to Cache & DB
+                            audioCache.current.set(cacheKey, url);
+                            await saveAudioSnippet(cacheKey, url);
+                            
+                            // Small delay to be nice to the API
+                            await new Promise(r => setTimeout(r, 300));
+                      }
+                  } catch (e) {
+                      console.warn(`Skipping audio for ${word.target} due to error/quota:`, e);
+                      // We just continue to next word, do NOT stop the app
+                  }
+              }
+
+              // 2b. Fetch Example Sentence Audio
+              if (autoFetchExampleAudio) {
+                  try {
+                      const exampleKey = word.example.target.trim();
+                      // Only fetch if not already in cache
+                      if (!audioCache.current.has(exampleKey)) {
+                            completedOps++;
+                            setLoadingMessage(`Downloading Audio (${completedOps}/${totalOps})...`);
+                            
+                            const base64Wav = await getHighQualityAudio(word.example.target, selectedLang);
+                            const url = `data:audio/wav;base64,${base64Wav}`;
+                            
+                            // Save to Cache & DB
+                            audioCache.current.set(exampleKey, url);
+                            await saveAudioSnippet(exampleKey, url);
+                            
+                            // Small delay to be nice to the API
+                            await new Promise(r => setTimeout(r, 300));
+                      }
+                  } catch (e) {
+                      console.warn(`Skipping audio for example ${word.example.target}:`, e);
+                  }
+              }
+          }
       }
 
       const updatedVocab = appendVocabulary(distinctNewWords, selectedLang);
@@ -413,6 +480,7 @@ export default function App() {
       setMode(AppMode.DASHBOARD);
     } finally {
       setLoading(false);
+      setLoadingMessage('');
     }
   };
   
@@ -426,6 +494,7 @@ export default function App() {
   const handleFetchMoreNews = async () => {
       if (!selectedLang) return;
       setLoading(true);
+      setLoadingMessage('Fetching News...');
       try {
           const newArticles = await generateCanadianNews(selectedLang);
           const updatedList = appendNewsData(newArticles, selectedLang);
@@ -434,6 +503,7 @@ export default function App() {
           setError("Could not fetch news.");
       } finally {
           setLoading(false);
+          setLoadingMessage('');
       }
   }
 
@@ -523,19 +593,33 @@ export default function App() {
 
   const handleToggleMastered = (id: string, status: boolean) => {
       if (!selectedLang) return;
-      const updated = updateWordStatus(id, { mastered: status }, selectedLang);
+      
+      // MUTUAL EXCLUSIVITY: If Mastered = true, then Favorite = false
+      const updates: Partial<VocabularyWord> = { mastered: status };
+      if (status === true) {
+          updates.isFavorite = false;
+      }
+
+      const updated = updateWordStatus(id, updates, selectedLang);
       setVocab(updated);
       if (currentBatch.some(w => w.id === id)) {
-           setCurrentBatch(prev => prev.map(w => w.id === id ? { ...w, mastered: status } : w));
+           setCurrentBatch(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
       }
   };
 
   const handleToggleFavorite = (id: string, status: boolean) => {
       if (!selectedLang) return;
-      const updated = updateWordStatus(id, { isFavorite: status }, selectedLang);
+      
+      // MUTUAL EXCLUSIVITY: If Favorite = true, then Mastered = false
+      const updates: Partial<VocabularyWord> = { isFavorite: status };
+      if (status === true) {
+          updates.mastered = false;
+      }
+
+      const updated = updateWordStatus(id, updates, selectedLang);
       setVocab(updated);
       if (currentBatch.some(w => w.id === id)) {
-           setCurrentBatch(prev => prev.map(w => w.id === id ? { ...w, isFavorite: status } : w));
+           setCurrentBatch(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
       }
   };
   
@@ -560,6 +644,7 @@ export default function App() {
         if (!file || !selectedLang) return;
         
         setLoading(true);
+        setLoadingMessage('Restoring Backup...');
         const reader = new FileReader();
         reader.onload = async (ev) => {
             try {
@@ -584,6 +669,7 @@ export default function App() {
                 console.error(err);
             } finally {
                 setLoading(false);
+                setLoadingMessage('');
             }
         };
         reader.readAsText(file);
@@ -637,12 +723,12 @@ export default function App() {
     <div className="h-[100dvh] overflow-hidden bg-gray-100 flex flex-col font-sans text-slate-700">
       
       {loading && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center text-white">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-in fade-in duration-300">
             <Loader2 className="w-16 h-16 animate-spin mb-4 text-sky-400" />
-            <p className="text-2xl font-black tracking-wide animate-pulse">
-                {mode === AppMode.GENERATING ? 'AI is thinking...' : 'Processing Backup...'}
+            <p className="text-2xl font-black tracking-wide animate-pulse text-center px-4">
+                {loadingMessage || 'Processing...'}
             </p>
-            {mode === AppMode.GENERATING && (
+            {mode === AppMode.GENERATING && !loadingMessage.includes("Audio") && (
                 <p className="text-sm text-white/70 mt-2 max-w-xs text-center">Creating unique vocabulary for you...</p>
             )}
         </div>

@@ -65,6 +65,25 @@ export const NewsReader: React.FC<NewsReaderProps> = ({
         };
     }, [isModalOpen]);
 
+    // Keyboard Navigation
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                if (isModalOpen) {
+                    setIsModalOpen(false);
+                } else if (selectedText) {
+                     // Deselect if just selecting
+                    window.getSelection()?.removeAllRanges();
+                    setSelectedText('');
+                } else {
+                    onBack();
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [onBack, isModalOpen, selectedText]);
+
     const handleLookup = async () => {
         if (!selectedText) return;
         setLookupLoading(true);
