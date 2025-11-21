@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppMode, VocabularyWord, Language, NewsArticle } from './types';
 import { generateVocabularyBatch, getHighQualityAudio, GenerationTopic, generateCanadianNews } from './services/geminiService';
@@ -105,7 +106,7 @@ export default function App() {
     }
   }, []);
 
-  const playAudioSource = (url: string, speed: number) => {
+  const playAudioSource = (url: string, speed: number, onEnd?: () => void) => {
       // Stop browser speech if running
       window.speechSynthesis.cancel();
 
@@ -115,17 +116,31 @@ export default function App() {
 
       const audio = currentAudioRef.current;
       
+      // Cleanup previous handlers
+      audio.onended = null;
+      audio.onerror = null;
+      
       // FORCE PAUSE to stop previous
       audio.pause();
       // CRITICAL: For replay of same URL, some browsers need explicit reset
       audio.currentTime = 0;
       audio.src = url;
       audio.playbackRate = speed;
+
+      // Handle onEnd callback
+      if (onEnd) {
+          const handleEnd = () => {
+              audio.onended = null; // Prevent double firing
+              onEnd();
+          };
+          audio.onended = handleEnd;
+      }
       
       const playPromise = audio.play();
       if (playPromise !== undefined) {
           playPromise.catch(e => {
               console.error("Audio play failed (interaction policy?):", e);
+              if (onEnd) onEnd(); // Ensure we move next even if play fails
           });
       }
   };
@@ -225,6 +240,9 @@ export default function App() {
         if (onEnd) onEnd();
     };
 
+    audio.onended = null;
+    audio.onerror = null;
+
     audio.pause();
     audio.currentTime = 0;
     audio.src = url;
@@ -260,7 +278,6 @@ export default function App() {
   // 3. AI Speech (Persistent Cache)
   const speakAI = useCallback(async (text: string) => {
     // 1. Check Cache (RAM & LocalStorage)
-    // Normalize text to avoid duplicate requests for "Hello" vs "Hello "
     const cacheKey = text.trim();
     
     if (audioCache.current.has(cacheKey)) {
@@ -300,6 +317,22 @@ export default function App() {
         setAiAudioLoading(false);
     }
   }, [aiAudioLoading, playbackSpeed]); 
+
+  // 4. Speak Best Available (For Autoplay)
+  // Priority: Cached AI -> Fast TTS
+  const speakBestAvailable = useCallback((text: string, onEnd?: () => void) => {
+      const cacheKey = text.trim();
+      if (audioCache.current.has(cacheKey)) {
+          const cachedUrl = audioCache.current.get(cacheKey);
+          if (cachedUrl) {
+              // Play from cache
+              playAudioSource(cachedUrl, playbackSpeed, onEnd);
+              return;
+          }
+      }
+      // Fallback to Fast TTS if no AI cache
+      speakFast(text, onEnd);
+  }, [playbackSpeed, speakFast]);
 
   // Main Logic Functions
   const handleStartNew = async (topic: GenerationTopic = 'general') => {
@@ -528,6 +561,7 @@ export default function App() {
           onBackToHome={() => setMode(AppMode.DASHBOARD)}
           speakFast={speakFast}
           speakAI={speakAI}
+          speakBestAvailable={speakBestAvailable}
           aiLoading={aiAudioLoading}
           currentLang={selectedLang}
           onToggleMastered={handleToggleMastered}
@@ -545,6 +579,7 @@ export default function App() {
             onBack={() => setMode(AppMode.DASHBOARD)}
             speakFast={speakFast}
             speakAI={speakAI}
+            speakBestAvailable={speakBestAvailable}
             aiLoading={aiAudioLoading}
             onDelete={handleDeleteWord}
             onToggleMastered={handleToggleMastered}
@@ -565,6 +600,7 @@ export default function App() {
               onBack={() => setMode(AppMode.DASHBOARD)}
               speakFast={speakFast}
               speakAI={speakAI}
+              speakBestAvailable={speakBestAvailable}
               loading={loading}
               aiLoading={aiAudioLoading}
               currentLang={selectedLang}
@@ -647,7 +683,7 @@ export default function App() {
                       </div>
 
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                          <p className="font-bold text-slate-600 mb-2">Full Backup (Includes Audio)</p>
+                          <p className="font-bold text-slate-600 mb-2">Full Backup (Audio + Data)</p>
                           <div className="grid grid-cols-2 gap-3">
                               <button 
                                 onClick={() => {

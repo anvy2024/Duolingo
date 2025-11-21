@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { VocabularyWord, Language } from '../types';
 import { Volume2, CheckCircle, Circle, Zap, Loader2, Heart, Radio, Sparkles } from 'lucide-react';
 import { FontSize } from '../App';
@@ -7,21 +7,32 @@ interface FlashcardProps {
   word: VocabularyWord;
   speakFast: (text: string, onEnd?: () => void) => void;
   speakAI: (text: string) => void;
+  speakBestAvailable?: (text: string, onEnd?: () => void) => void;
   aiLoading: boolean;
   onToggleMastered?: (id: string, currentStatus: boolean) => void;
   onToggleFavorite?: (id: string, currentStatus: boolean) => void;
   isViewMode?: boolean;
   currentLang?: Language; 
-  fontSize?: FontSize; // Accepted fontSize prop
+  fontSize?: FontSize; 
 }
 
-export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, aiLoading, onToggleMastered, onToggleFavorite, isViewMode = false, currentLang = 'fr', fontSize = 'normal' }) => {
+export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, speakBestAvailable, aiLoading, onToggleMastered, onToggleFavorite, isViewMode = false, currentLang = 'fr', fontSize = 'normal' }) => {
   const [isFlipped, setIsFlipped] = useState(false);
   
   // Reset flip when word changes
-  React.useEffect(() => {
+  useEffect(() => {
     setIsFlipped(false);
   }, [word.id]);
+
+  // Auto-play example on flip (Back side)
+  useEffect(() => {
+    if (isFlipped && speakBestAvailable) {
+        const timer = setTimeout(() => {
+            speakBestAvailable(word.example.target);
+        }, 300);
+        return () => clearTimeout(timer);
+    }
+  }, [isFlipped, speakBestAvailable, word.example.target]);
 
   const handleCardClick = (e: React.MouseEvent) => {
     // Prevent flip if clicking specific buttons

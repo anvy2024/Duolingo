@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { VocabularyWord, Language } from '../types';
-import { Zap, Sparkles, Search, ArrowLeft, Trash2, X, Heart, CheckCircle, Plus, Save, Loader2, Gamepad2, Play, HelpCircle, Headphones, Grid, Volume2, Pause, Square, Clock, Circle, Pencil, Edit3, Shuffle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Zap, Sparkles, Search, ArrowLeft, Trash2, X, Heart, CheckCircle, Plus, Save, Loader2, Gamepad2, Play, Pause, Square, Clock, Circle, Pencil, Edit3, Shuffle, ChevronLeft, ChevronRight, HelpCircle, Headphones, Grid, Volume2 } from 'lucide-react';
 import { Flashcard } from './Flashcard';
 import { generateSingleWordDetails } from '../services/geminiService';
 import { TRANSLATIONS } from '../constants/translations';
@@ -15,6 +14,7 @@ interface VocabularyListProps {
   onBack: () => void;
   speakFast: (text: string, onEnd?: () => void) => void;
   speakAI: (text: string) => void;
+  speakBestAvailable: (text: string, onEnd?: () => void) => void;
   aiLoading: boolean;
   onDelete: (id: string) => void;
   onToggleMastered: (id: string, status: boolean) => void;
@@ -31,7 +31,7 @@ interface VocabularyListProps {
 type ViewMode = 'LIST' | 'GAME_MENU' | 'GAME_QUIZ' | 'GAME_AUDIO' | 'GAME_MATCH' | 'GAME_FILL' | 'GAME_SCRAMBLE';
 
 export const VocabularyList: React.FC<VocabularyListProps> = ({ 
-    words, currentLang, onBack, speakFast, speakAI, aiLoading, onDelete, 
+    words, currentLang, onBack, speakFast, speakAI, speakBestAvailable, aiLoading, onDelete, 
     onToggleMastered, onToggleFavorite, playbackSpeed, onToggleSpeed, onAddWord, onEditWord, initialFilter = 'ALL', swipeAutoplay,
     fontSize = 'normal'
 }) => {
@@ -57,9 +57,11 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   const [playDelay, setPlayDelay] = useState(2000); // 2000ms = 2s default
   const [showSettings, setShowSettings] = useState(false);
   
-  // Swipe State for Modal
-  const [touchStart, setTouchStart] = useState<number | null>(null);
-  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  // --- SWIPE ANIMATION STATE ---
+  const [swipeX, setSwipeX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const startXRef = useRef<number | null>(null);
   
   // Refs
   const loopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -153,6 +155,16 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
           stopAutoPlay();
       }
       setSelectedWordId(wordId);
+      setSwipeX(0); // Ensure clean state
+
+      // AUTO PLAY when opening card
+      const word = words.find(w => w.id === wordId);
+      if (word) {
+          // Small delay to allow modal animation to start smoothly
+          setTimeout(() => {
+               speakBestAvailable(word.target);
+          }, 300);
+      }
   }
 
   // Auto Play Effect Loop
@@ -184,16 +196,31 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
 
     // Small delay before speaking to allow scroll to finish visually
     const startDelay = setTimeout(() => {
-        speakFast(word.target, playNext);
+        // Use Best Available (Cached AI or Fast)
+        speakBestAvailable(word.target, playNext);
     }, 300);
 
     return () => {
         clearTimeout(startDelay);
         if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
     };
-  }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue, speakFast, playDelay]);
+  }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue, speakBestAvailable, playDelay]);
 
   // --- MODAL SWIPE LOGIC ---
+  const animateSwipe = (direction: 'left' | 'right') => {
+      if (!selectedWordId) return;
+      setIsAnimating(true);
+      setSwipeX(direction === 'left' ? -500 : 500);
+
+      setTimeout(() => {
+          if (direction === 'left') handleNextWord();
+          else handlePrevWord();
+          
+          setSwipeX(0);
+          setIsAnimating(false);
+      }, 200);
+  };
+
   const handleNextWord = () => {
       if (!selectedWordId) return;
       const idx = filteredWords.findIndex(w => w.id === selectedWordId);
@@ -201,7 +228,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
           const nextWord = filteredWords[idx + 1];
           setSelectedWordId(nextWord.id);
           if (swipeAutoplay) {
-             setTimeout(() => speakFast(nextWord.target), 300);
+             setTimeout(() => speakBestAvailable(nextWord.target), 400);
           }
       }
   }
@@ -213,29 +240,58 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
           const prevWord = filteredWords[idx - 1];
           setSelectedWordId(prevWord.id);
           if (swipeAutoplay) {
-             setTimeout(() => speakFast(prevWord.target), 300);
+             setTimeout(() => speakBestAvailable(prevWord.target), 400);
           }
       }
   }
 
   const onTouchStart = (e: React.TouchEvent) => {
-      setTouchEnd(null);
-      setTouchStart(e.targetTouches[0].clientX);
+      if (isAnimating) return;
+      startXRef.current = e.targetTouches[0].clientX;
+      setIsDragging(true);
   }
 
   const onTouchMove = (e: React.TouchEvent) => {
-      setTouchEnd(e.targetTouches[0].clientX);
+      if (!startXRef.current || isAnimating) return;
+      const diff = e.targetTouches[0].clientX - startXRef.current;
+      setSwipeX(diff);
   }
 
   const onTouchEnd = () => {
-      if (!touchStart || !touchEnd) return;
-      const distance = touchStart - touchEnd;
-      const isLeftSwipe = distance > 50;
-      const isRightSwipe = distance < -50;
+      if (!startXRef.current || isAnimating) return;
+      setIsDragging(false);
       
-      if (isLeftSwipe) handleNextWord();
-      if (isRightSwipe) handlePrevWord();
+      const threshold = 80;
+      if (swipeX > threshold) {
+          // Prev
+           if (filteredWords.findIndex(w => w.id === selectedWordId) > 0) {
+               animateSwipe('right');
+           } else {
+               setSwipeX(0);
+           }
+      } else if (swipeX < -threshold) {
+          // Next
+           if (filteredWords.findIndex(w => w.id === selectedWordId) < filteredWords.length - 1) {
+               animateSwipe('left');
+           } else {
+               setSwipeX(0);
+           }
+      } else {
+          setSwipeX(0);
+      }
+      startXRef.current = null;
   }
+  
+  // Styles for Swipe
+  const getCardStyle = () => {
+      const rotation = swipeX / 20;
+      const opacity = 1 - Math.abs(swipeX) / 500;
+      return {
+          transform: `translateX(${swipeX}px) rotate(${rotation}deg)`,
+          opacity: opacity,
+          transition: isDragging ? 'none' : 'transform 0.2s ease-out, opacity 0.2s ease-out'
+      };
+  };
 
   // --- GAME LOGIC ---
   const startGame = (mode: ViewMode) => {
@@ -325,6 +381,9 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
       setSelectedAnswer(answerId);
       setIsCorrect(correct);
       
+      // PLAY AUDIO ANSWER IMMEDIATELY
+      speakBestAvailable(currentQ.target.target);
+      
       if (correct) {
           setScore(prev => prev + 10);
           const audio = new Audio('https://actions.google.com/sounds/v1/cartoon/pop.ogg');
@@ -351,7 +410,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
           } else {
               setIsGameOver(true);
           }
-      }, 1500);
+      }, 2000); // Increased delay slightly to allow audio to finish
   };
 
   // Scramble Game Logic
@@ -368,6 +427,10 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
           if (attempt.toLowerCase() === actual.toLowerCase()) {
               setIsCorrect(true);
               setScore(prev => prev + 10);
+              
+               // PLAY AUDIO ANSWER
+               speakBestAvailable(gameQuestions[questionIndex].target.target);
+               
                const audio = new Audio('https://actions.google.com/sounds/v1/cartoon/pop.ogg');
                audio.play().catch(() => {});
           } else {
@@ -386,7 +449,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
               } else {
                   setIsGameOver(true);
               }
-          }, 1000);
+          }, 1500);
       }
   };
 
@@ -409,9 +472,17 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
               setMatchedPairs(prev => [...prev, newFlipped[0].id]);
               setScore(prev => prev + 20);
               setFlippedCards([]);
+              
+              // PLAY AUDIO OF THE TARGET WORD
+              // Find the card that is the target type to speak it
+              const targetCard = newFlipped.find(c => c.type === 'target');
+              if (targetCard) {
+                  speakBestAvailable(targetCard.content);
+              }
+
               // Check win condition for matching
               if (matchedPairs.length + 1 === 4) { // 4 pairs total
-                  setTimeout(() => setIsGameOver(true), 500);
+                  setTimeout(() => setIsGameOver(true), 1500);
               }
           } else {
               setTimeout(() => setFlippedCards([]), 1000);
@@ -423,9 +494,10 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
       if (viewMode === 'GAME_AUDIO' && !isGameOver && gameQuestions.length > 0 && !selectedAnswer) {
           // Auto play audio for new question
           const word = gameQuestions[questionIndex].target.target;
-          setTimeout(() => speakFast(word), 500);
+          // Use Best Available (Cached AI or Fast)
+          setTimeout(() => speakBestAvailable(word), 500);
       }
-  }, [questionIndex, viewMode, isGameOver]);
+  }, [questionIndex, viewMode, isGameOver, speakBestAvailable]);
 
 
   // --- EXISTING HANDLERS ---
@@ -896,7 +968,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
 
                          {viewMode === 'GAME_AUDIO' && (
                              <button 
-                                onClick={() => speakFast(gameQuestions[questionIndex].target.target)}
+                                onClick={() => speakBestAvailable(gameQuestions[questionIndex].target.target)}
                                 className="w-32 h-32 bg-indigo-500 rounded-full flex items-center justify-center mx-auto shadow-lg shadow-indigo-200 active:scale-95 transition-transform"
                              >
                                  <Volume2 className="w-12 h-12 text-white" />
@@ -1121,7 +1193,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
       {/* SELECTED WORD MODAL WITH SWIPE */}
       {selectedWord && (
         <div 
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200 cursor-pointer overflow-hidden"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 cursor-auto overflow-hidden"
             onClick={() => setSelectedWordId(null)}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
@@ -1129,20 +1201,24 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
         >
             {/* Navigation Arrows (Visual cues for Desktop/Tablet) */}
             <button 
-                onClick={(e) => { e.stopPropagation(); handlePrevWord(); }}
+                onClick={(e) => { e.stopPropagation(); animateSwipe('right'); }}
                 disabled={filteredWords.indexOf(selectedWord) === 0}
                 className="hidden md:block absolute left-4 p-3 bg-white/20 hover:bg-white/40 text-white rounded-full backdrop-blur-md disabled:opacity-20 transition-all z-50"
             >
                 <ChevronLeft className="w-8 h-8" />
             </button>
 
-            <div className="relative w-full max-w-lg cursor-auto animate-in zoom-in duration-300 flex flex-col items-center">
+            <div 
+                className="relative w-full max-w-lg flex flex-col items-center"
+                style={getCardStyle()}
+            >
                 <div onClick={(e) => e.stopPropagation()} className="w-full">
                     <Flashcard 
                         key={selectedWord.id} // Force re-render on swipe
                         word={selectedWord} 
                         speakFast={speakFast}
                         speakAI={speakAI}
+                        speakBestAvailable={speakBestAvailable}
                         aiLoading={aiLoading}
                         onToggleMastered={handleCardToggleMastered}
                         onToggleFavorite={handleCardToggleFavorite}
@@ -1173,7 +1249,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
             </div>
 
             <button 
-                onClick={(e) => { e.stopPropagation(); handleNextWord(); }}
+                onClick={(e) => { e.stopPropagation(); animateSwipe('left'); }}
                 disabled={filteredWords.indexOf(selectedWord) === filteredWords.length - 1}
                 className="hidden md:block absolute right-4 p-3 bg-white/20 hover:bg-white/40 text-white rounded-full backdrop-blur-md disabled:opacity-20 transition-all z-50"
             >

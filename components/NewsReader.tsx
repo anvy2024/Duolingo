@@ -11,6 +11,7 @@ interface NewsReaderProps {
     onBack: () => void;
     speakFast: (text: string, onEnd?: () => void) => void;
     speakAI: (text: string) => void;
+    speakBestAvailable: (text: string, onEnd?: () => void) => void;
     loading: boolean;
     aiLoading: boolean;
     currentLang: Language;
@@ -23,7 +24,7 @@ interface NewsReaderProps {
 }
 
 export const NewsReader: React.FC<NewsReaderProps> = ({ 
-    articles, onBack, speakFast, speakAI, loading, aiLoading, currentLang, onAddWord, onLoadMore, onDeleteArticle,
+    articles, onBack, speakFast, speakAI, speakBestAvailable, loading, aiLoading, currentLang, onAddWord, onLoadMore, onDeleteArticle,
     playbackSpeed, onToggleSpeed, fontSize = 'normal'
 }) => {
     const t = TRANSLATIONS[currentLang];
@@ -194,7 +195,7 @@ export const NewsReader: React.FC<NewsReaderProps> = ({
                                         <div className="flex justify-end gap-2 mt-3 pt-3 border-t border-indigo-200/50">
                                             <p className="text-xs text-indigo-400 font-bold uppercase mr-auto self-center">{t.readAloud}</p>
                                             <button 
-                                                onClick={() => speakFast(article.summary)}
+                                                onClick={() => speakBestAvailable(article.summary)}
                                                 className="p-2 rounded-xl bg-white text-slate-400 border-2 border-slate-200 border-b-4 hover:text-sky-500 active:border-b-0 active:translate-y-1 transition-all"
                                             >
                                                 <Volume2 className="w-5 h-5" />
@@ -270,6 +271,7 @@ export const NewsReader: React.FC<NewsReaderProps> = ({
                                     word={{...lookupResult, isFavorite: isLookupFavorite}}
                                     speakFast={speakFast}
                                     speakAI={speakAI}
+                                    speakBestAvailable={speakBestAvailable}
                                     aiLoading={aiLoading}
                                     isViewMode={true} 
                                     onToggleFavorite={() => setIsLookupFavorite(!isLookupFavorite)}

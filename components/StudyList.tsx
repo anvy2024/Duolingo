@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { VocabularyWord, Language } from '../types';
 import { Zap, Sparkles, ArrowRight, Volume2, Home, Heart, CheckCircle, Circle, Play, Pause, Square, Clock, X, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -13,6 +12,7 @@ interface StudyListProps {
   onBackToHome: () => void;
   speakFast: (text: string, onEnd?: () => void) => void;
   speakAI: (text: string) => void;
+  speakBestAvailable: (text: string, onEnd?: () => void) => void;
   aiLoading: boolean;
   currentLang: Language;
   onToggleMastered: (id: string, status: boolean) => void;
@@ -23,7 +23,7 @@ interface StudyListProps {
 }
 
 export const StudyList: React.FC<StudyListProps> = ({ 
-    words, title, onComplete, onBackToHome, speakFast, speakAI, aiLoading, currentLang,
+    words, title, onComplete, onBackToHome, speakFast, speakAI, speakBestAvailable, aiLoading, currentLang,
     onToggleMastered, onToggleFavorite, playbackSpeed = 1.0, swipeAutoplay,
     fontSize = 'normal'
 }) => {
@@ -36,10 +36,13 @@ export const StudyList: React.FC<StudyListProps> = ({
   const [playDelay, setPlayDelay] = useState(2000); // Default 2s
   const [showSettings, setShowSettings] = useState(false);
   
-  // Swipe State
-  const [touchStart, setTouchStart] = useState<number | null>(null);
-  const [touchEnd, setTouchEnd] = useState<number | null>(null);
-  
+  // --- SWIPE ANIMATION STATE ---
+  const [swipeX, setSwipeX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false); // For the fly-out animation
+  const startXRef = useRef<number | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+
   // Refs for loop management
   const loopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
@@ -53,11 +56,74 @@ export const StudyList: React.FC<StudyListProps> = ({
       };
   }, []);
 
+  // --- SWIPE HANDLERS ---
+  const onTouchStart = (e: React.TouchEvent) => {
+      if (isAutoPlaying || isAnimating) return;
+      startXRef.current = e.targetTouches[0].clientX;
+      setIsDragging(true);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+      if (!startXRef.current || isAutoPlaying || isAnimating) return;
+      const currentX = e.targetTouches[0].clientX;
+      const diff = currentX - startXRef.current;
+      setSwipeX(diff);
+  };
+
+  const onTouchEnd = () => {
+      if (!startXRef.current || isAutoPlaying || isAnimating) return;
+      setIsDragging(false);
+      const threshold = 100; // Pixel threshold to trigger swipe
+
+      if (swipeX > threshold) {
+          // Swiped Right -> Prev
+          if (currentIndex > 0) {
+              animateSwipe('right');
+          } else {
+              resetSwipe();
+          }
+      } else if (swipeX < -threshold) {
+          // Swiped Left -> Next
+          if (currentIndex < words.length - 1) {
+              animateSwipe('left');
+          } else {
+               resetSwipe();
+          }
+      } else {
+          resetSwipe();
+      }
+      startXRef.current = null;
+  };
+
+  const animateSwipe = (direction: 'left' | 'right') => {
+      setIsAnimating(true);
+      // Fly out animation
+      setSwipeX(direction === 'left' ? -500 : 500); 
+      
+      setTimeout(() => {
+          // Actual data change
+          if (direction === 'left') {
+              handleNext(false); // False = don't trigger basic transition, we handle it
+          } else {
+              handlePrev(false);
+          }
+          
+          // Reset position instantly (while invisible or swapped)
+          setSwipeX(0);
+          setIsAnimating(false);
+      }, 200); // Match CSS duration
+  };
+
+  const resetSwipe = () => {
+      setSwipeX(0);
+  };
+
   const startAutoPlay = () => {
       if (words.length === 0) return;
       setIsAutoPlaying(true);
       setIsPaused(false);
       setShowSettings(false);
+      setSwipeX(0); // Reset any drag
   };
 
   const stopAutoPlay = () => {
@@ -77,51 +143,27 @@ export const StudyList: React.FC<StudyListProps> = ({
       }
   };
 
-  const handleNext = () => {
+  const handleNext = (animate = true) => {
       if (currentIndex < words.length - 1) {
           const nextIndex = currentIndex + 1;
           setCurrentIndex(nextIndex);
           if (swipeAutoplay) {
-              setTimeout(() => speakFast(words[nextIndex].target), 300);
+              // Use Best Available (Cached AI or Fast)
+              setTimeout(() => speakBestAvailable(words[nextIndex].target), 400);
           }
-      } else {
-          // Optionally loop or stop
       }
   };
 
-  const handlePrev = () => {
+  const handlePrev = (animate = true) => {
       if (currentIndex > 0) {
           const prevIndex = currentIndex - 1;
           setCurrentIndex(prevIndex);
           if (swipeAutoplay) {
-              setTimeout(() => speakFast(words[prevIndex].target), 300);
+              // Use Best Available (Cached AI or Fast)
+              setTimeout(() => speakBestAvailable(words[prevIndex].target), 400);
           }
       }
   };
-
-  // Swipe Handlers
-  const onTouchStart = (e: React.TouchEvent) => {
-      setTouchEnd(null);
-      setTouchStart(e.targetTouches[0].clientX);
-  }
-
-  const onTouchMove = (e: React.TouchEvent) => {
-      setTouchEnd(e.targetTouches[0].clientX);
-  }
-
-  const onTouchEnd = () => {
-      if (!touchStart || !touchEnd) return;
-      const distance = touchStart - touchEnd;
-      const isLeftSwipe = distance > 50;
-      const isRightSwipe = distance < -50;
-      
-      if (isLeftSwipe) {
-          handleNext();
-      }
-      if (isRightSwipe) {
-          handlePrev();
-      }
-  }
 
   // THE AUTO PLAY LOOP
   useEffect(() => {
@@ -150,20 +192,34 @@ export const StudyList: React.FC<StudyListProps> = ({
     };
 
     const initialDelay = setTimeout(() => {
-         speakFast(word.target, playNext);
+         // Use Best Available (Cached AI or Fast)
+         speakBestAvailable(word.target, playNext);
     }, 500);
 
     return () => {
         clearTimeout(initialDelay);
         if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
     };
-  }, [currentIndex, isAutoPlaying, isPaused, words, speakFast, playDelay]);
+  }, [currentIndex, isAutoPlaying, isPaused, words, speakBestAvailable, playDelay]);
 
 
   const currentWord = words[currentIndex];
 
+  // Calculate Styles for Swipe
+  const getCardStyle = () => {
+      const rotation = swipeX / 20; // Rotate 1 deg for every 20px moved
+      const opacity = 1 - Math.abs(swipeX) / 500; // Fade out as it leaves
+      
+      return {
+          transform: `translateX(${swipeX}px) rotate(${rotation}deg)`,
+          opacity: opacity,
+          transition: isDragging ? 'none' : 'transform 0.3s ease-out, opacity 0.3s ease-out',
+          cursor: isDragging ? 'grabbing' : 'grab'
+      };
+  };
+
   return (
-    <div className="flex flex-col h-full max-w-2xl mx-auto w-full relative bg-gray-100">
+    <div className="flex flex-col h-full max-w-2xl mx-auto w-full relative bg-gray-100 overflow-hidden">
         
       {/* Header Bar */}
       <div className="bg-gray-100/95 backdrop-blur p-4 flex justify-between items-center border-b-2 border-slate-200 sticky top-0 z-20">
@@ -233,9 +289,9 @@ export const StudyList: React.FC<StudyListProps> = ({
           </div>
       )}
 
-      {/* Single Flashcard View with Swipe */}
+      {/* Flashcard View with Physics Swipe */}
       <div 
-        className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden relative"
+        className="flex-1 flex flex-col items-center justify-center p-4 relative overflow-hidden"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
@@ -243,7 +299,7 @@ export const StudyList: React.FC<StudyListProps> = ({
          {!isAutoPlaying && (
              <div className="absolute top-1/2 left-2 transform -translate-y-1/2 z-10">
                  <button 
-                    onClick={handlePrev} 
+                    onClick={() => animateSwipe('right')} 
                     disabled={currentIndex === 0}
                     className="p-2 bg-white rounded-full shadow-md text-slate-400 disabled:opacity-30 hover:text-sky-500 hover:scale-110 transition-all"
                  >
@@ -255,7 +311,7 @@ export const StudyList: React.FC<StudyListProps> = ({
          {!isAutoPlaying && (
              <div className="absolute top-1/2 right-2 transform -translate-y-1/2 z-10">
                  <button 
-                    onClick={handleNext} 
+                    onClick={() => animateSwipe('left')} 
                     disabled={currentIndex === words.length - 1}
                     className="p-2 bg-white rounded-full shadow-md text-slate-400 disabled:opacity-30 hover:text-sky-500 hover:scale-110 transition-all"
                  >
@@ -265,17 +321,22 @@ export const StudyList: React.FC<StudyListProps> = ({
          )}
 
          {currentWord && (
-             <div className="w-full animate-in zoom-in duration-300">
+             <div 
+                ref={cardRef}
+                style={getCardStyle()}
+                className="w-full"
+             >
                  <Flashcard 
                     key={currentWord.id}
                     word={currentWord}
                     speakFast={speakFast}
                     speakAI={speakAI}
+                    speakBestAvailable={speakBestAvailable}
                     aiLoading={aiLoading}
                     onToggleMastered={onToggleMastered}
                     onToggleFavorite={onToggleFavorite}
                     currentLang={currentLang}
-                    fontSize={fontSize} // Pass fontSize
+                    fontSize={fontSize} 
                  />
              </div>
          )}
