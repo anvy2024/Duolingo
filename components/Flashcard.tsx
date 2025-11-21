@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { VocabularyWord, Language } from '../types';
 import { Volume2, CheckCircle, Circle, Zap, Loader2, Heart, Radio } from 'lucide-react';
@@ -68,13 +67,14 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
   };
 
   return (
-    // Changed aspect ratio to 4/5 for mobile (shorter) and kept 3/5 for desktop/tablets
-    <div className={`w-full max-w-sm aspect-[4/5] md:aspect-[3/5] ${isViewMode ? 'max-h-[55vh]' : 'max-h-[500px]'} perspective-1000 mx-auto my-2 cursor-pointer group select-none`} onClick={handleCardClick}>
+    // Reduced height for mobile to ensure buttons below are visible
+    // Using fixed height for better consistency on small screens, responsive on md+
+    <div className={`w-full max-w-sm h-[420px] md:h-auto md:aspect-[3/5] ${isViewMode ? 'max-h-[55vh]' : 'max-h-[500px]'} perspective-1000 mx-auto my-2 cursor-pointer group select-none`} onClick={handleCardClick}>
       <div className={`relative w-full h-full transition-transform duration-500 transform-style-3d ${isFlipped ? 'rotate-y-180' : ''}`}>
         
         {/* FRONT SIDE */}
         <div 
-            className={`absolute w-full h-full bg-white rounded-[2rem] border-2 border-slate-200 border-b-[8px] flex flex-col items-center justify-between p-5 shadow-xl ${word.mastered ? 'border-green-400 bg-green-50/30' : ''}`}
+            className={`absolute w-full h-full bg-white rounded-[2rem] border-2 border-slate-200 border-b-[8px] flex flex-col items-center justify-between p-5 shadow-xl`}
             style={backfaceStyle}
         >
           
@@ -119,7 +119,7 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
 
           {/* Main Word Display */}
           <div className="flex flex-col items-center justify-center w-full text-center flex-1 overflow-hidden py-2">
-            <div className={`${getFontSize(displayTarget)} font-black text-slate-700 mb-6 break-words w-full tracking-tight overflow-y-auto max-h-[60%]`}>
+            <div className={`${getFontSize(displayTarget)} font-black text-slate-700 mb-6 break-words w-full tracking-tight overflow-y-auto max-h-[60%] custom-scrollbar`}>
                 {displayTarget}
             </div>
             
@@ -148,11 +148,11 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
             </div>
           </div>
 
-          {/* EXAMPLE SENTENCE AREA (Shortened) */}
-          <div className="w-full mb-4 shrink-0 z-10 text-center px-2">
+          {/* EXAMPLE SENTENCE AREA */}
+          <div className="w-full mb-2 shrink-0 z-10 text-center px-2">
                {!isPhraseMode && (
                    <div className="flex flex-col items-center gap-1 group/example" onClick={(e) => e.stopPropagation()}>
-                       <p className="text-sm md:text-base leading-snug font-medium text-slate-600 italic line-clamp-2">
+                       <p className="text-sm leading-snug font-medium text-slate-600 italic line-clamp-2">
                            "{word.example.target}"
                        </p>
                        <div className="flex gap-3 mt-1">
@@ -173,23 +173,22 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
                    </div>
                )}
           </div>
-          {/* Removed Footer Text "Cham de lat" to save space and fix visual glitch */}
         </div>
 
         {/* BACK SIDE */}
         <div 
-            className={`absolute w-full h-full bg-white rounded-[2rem] border-2 border-slate-200 border-b-[8px] rotate-y-180 flex flex-col p-5 overflow-hidden ${word.mastered ? 'border-green-400' : ''}`}
+            className="absolute w-full h-full bg-white rounded-[2rem] border-2 border-slate-200 border-b-[8px] rotate-y-180 flex flex-col p-5 overflow-hidden"
             style={backfaceStyle}
         >
              
              {/* Header: Vietnamese Meaning - FIXED LAYOUT */}
-             <div className="flex flex-row justify-between items-start border-b-2 border-slate-100 pb-3 mb-3 shrink-0 w-full">
+             <div className="flex w-full justify-between items-start border-b-2 border-slate-100 pb-3 mb-3 shrink-0">
                  <div className="flex-1 pr-2 min-w-0">
                      <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">Nghĩa tiếng Việt</p>
                      <h3 className="text-xl md:text-2xl font-black text-slate-700 leading-tight break-words">{word.vietnamese}</h3>
                  </div>
-                 {/* Fixed Action Container - uses shrink-0 to stay on right */}
-                 <div className="shrink-0">
+                 {/* Fixed Action Container */}
+                 <div className="shrink-0 ml-2">
                     <button 
                         onClick={(e) => handleAudioClick(e, 'fast', displayTarget)}
                         className="p-2.5 rounded-xl bg-slate-100 text-slate-400 hover:text-sky-500 transition-colors"

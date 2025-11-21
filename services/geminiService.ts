@@ -432,7 +432,8 @@ export const getHighQualityAudio = async (text: string): Promise<string> => {
                 responseModalities: [Modality.AUDIO],
                 speechConfig: {
                     voiceConfig: {
-                        prebuiltVoiceConfig: { voiceName: 'Fenrir' } 
+                        // Updated to Kore for more natural human-like female voice
+                        prebuiltVoiceConfig: { voiceName: 'Kore' } 
                     }
                 }
             }

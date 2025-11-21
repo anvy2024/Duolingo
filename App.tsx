@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppMode, VocabularyWord, Language, NewsArticle } from './types';
 import { generateVocabularyBatch, getHighQualityAudio, GenerationTopic, generateCanadianNews } from './services/geminiService';
@@ -98,10 +97,10 @@ export default function App() {
 
       const audio = currentAudioRef.current;
       
-      // CRITICAL FIX: Always pause and reset time before playing, even if src is same
+      // FORCE PAUSE to stop previous
       audio.pause();
+      // CRITICAL: For replay of same URL, some browsers need explicit reset
       audio.currentTime = 0;
-      
       audio.src = url;
       audio.playbackRate = speed;
       
@@ -248,7 +247,7 @@ export default function App() {
     if (audioCache.current.has(cacheKey)) {
         const cachedUrl = audioCache.current.get(cacheKey);
         if (cachedUrl) {
-            console.log("Playing from Cache");
+            console.log("Playing from Cache", cacheKey);
             playAudioSource(cachedUrl, playbackSpeed);
             return;
         }
@@ -274,11 +273,12 @@ export default function App() {
         playAudioSource(url, playbackSpeed);
     } catch (err) {
         console.error("AI Audio playback error", err);
-        speakFast(text); // Fallback to fast audio if AI fails
+        // Do not fallback to speakFast here to avoid confusion, just alert or log
+        setError("AI Voice unavailable right now. Try Fast mode.");
     } finally {
         setAiAudioLoading(false);
     }
-  }, [aiAudioLoading, playbackSpeed, speakFast]);
+  }, [aiAudioLoading, playbackSpeed]); // Removed speakFast from dependency to avoid circular logic if not used
 
   // Main Logic Functions
   const handleStartNew = async (topic: GenerationTopic = 'general') => {
@@ -432,7 +432,7 @@ export default function App() {
       )}
       
       {error && (
-          <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-rose-500 text-white px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 max-w-xs mx-auto">
+          <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-rose-500 text-white px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 max-w-xs mx-auto animate-in slide-in-from-top-5">
               <AlertTriangle className="w-6 h-6 shrink-0" />
               <p className="font-bold text-sm">{error}</p>
               <button onClick={() => setError(null)} className="ml-auto"><X className="w-5 h-5" /></button>
