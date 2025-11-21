@@ -28,7 +28,7 @@ export default function App() {
   
   // Settings
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
-  const [swipeAutoplay, setSwipeAutoplay] = useState(true); // NEW SETTING
+  const [swipeAutoplay, setSwipeAutoplay] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   // REFS FOR AUDIO ENGINE
@@ -36,6 +36,10 @@ export default function App() {
   const audioTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // ROBUST CACHING: Use Map for better performance with long strings
+  // Key: Text content, Value: Data URI string (base64 audio)
+  const audioCache = useRef<Map<string, string>>(new Map());
   
   const [loading, setLoading] = useState(false);
   const [aiAudioLoading, setAiAudioLoading] = useState(false);
@@ -71,6 +75,8 @@ export default function App() {
     // Initialize the persistent Audio object
     if (!currentAudioRef.current) {
         currentAudioRef.current = new Audio();
+        // Pre-configure to avoid delay
+        currentAudioRef.current.preload = 'auto';
     }
     
     return () => {
@@ -86,11 +92,24 @@ export default function App() {
       // Stop browser speech if running
       window.speechSynthesis.cancel();
 
-      if (currentAudioRef.current) {
-          currentAudioRef.current.pause();
-          currentAudioRef.current.src = url;
-          currentAudioRef.current.playbackRate = speed;
-          currentAudioRef.current.play().catch(e => console.error("Audio play failed:", e));
+      if (!currentAudioRef.current) {
+          currentAudioRef.current = new Audio();
+      }
+
+      const audio = currentAudioRef.current;
+      
+      // CRITICAL FIX: Always pause and reset time before playing, even if src is same
+      audio.pause();
+      audio.currentTime = 0;
+      
+      audio.src = url;
+      audio.playbackRate = speed;
+      
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+          playPromise.catch(e => {
+              console.error("Audio play failed (interaction policy?):", e);
+          });
       }
   };
 
@@ -175,7 +194,6 @@ export default function App() {
     // Use googleapis.com
     const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&q=${encodeURIComponent(text)}&tl=${tl}`;
     
-    // Ensure we have the audio object
     if (!currentAudioRef.current) {
         currentAudioRef.current = new Audio();
     }
@@ -194,20 +212,16 @@ export default function App() {
     audio.currentTime = 0;
     audio.src = url;
     audio.playbackRate = playbackSpeed;
-    
-    // Important for mobile stability
     audio.load();
 
     audio.onended = handleEnd;
     
     audio.onerror = (e) => {
         console.warn("Google TTS failed/blocked, falling back to native.", e);
-        // Don't call handleEnd here, let speakNative handle it
         speakNative(text, onEnd);
     };
 
-    // Safety Timeout: If audio doesn't finish (or start) within reasonable time, force next
-    // This prevents the loop from getting stuck forever
+    // Safety Timeout
     const estimatedDuration = Math.max(2000, text.length * 150);
     audioTimeoutRef.current = setTimeout(() => {
         if (!ended) {
@@ -220,14 +234,27 @@ export default function App() {
     if (playPromise !== undefined) {
         playPromise.catch(e => {
             console.warn("Audio play promise rejected (likely interaction policy or network)", e);
-            // If autoplay is blocked, we MUST fallback or skip
             speakNative(text, onEnd);
         });
     }
 
   }, [selectedLang, playbackSpeed, speakNative]);
 
+  // 3. AI Speech (Cached)
   const speakAI = useCallback(async (text: string) => {
+    // 1. Check Cache (Map is faster and safer for long text)
+    const cacheKey = text.trim();
+    
+    if (audioCache.current.has(cacheKey)) {
+        const cachedUrl = audioCache.current.get(cacheKey);
+        if (cachedUrl) {
+            console.log("Playing from Cache");
+            playAudioSource(cachedUrl, playbackSpeed);
+            return;
+        }
+    }
+    
+    // 2. If not cached, fetch from API
     if (aiAudioLoading) return; 
     
     window.speechSynthesis.cancel();
@@ -239,10 +266,15 @@ export default function App() {
     try {
         const base64Wav = await getHighQualityAudio(text);
         const url = `data:audio/wav;base64,${base64Wav}`;
+        
+        // 3. Save to Cache
+        audioCache.current.set(cacheKey, url);
+        
+        // 4. Play
         playAudioSource(url, playbackSpeed);
     } catch (err) {
         console.error("AI Audio playback error", err);
-        speakFast(text);
+        speakFast(text); // Fallback to fast audio if AI fails
     } finally {
         setAiAudioLoading(false);
     }
@@ -255,20 +287,16 @@ export default function App() {
     setError(null);
     setMode(AppMode.GENERATING);
     try {
-      // Get ALL existing words to filter against
       const existingWords = vocab.map(v => v.target);
       const generatedWords = await generateVocabularyBatch(existingWords, topic, selectedLang);
       
-      // CRITICAL: Strict Duplication Check
-      // Normalize: trim and lowercase to compare
       const distinctNewWords = generatedWords.filter(nw => {
           const normalizedNew = nw.target.trim().toLowerCase();
-          // Check against all existing words in the entire dictionary
           return !vocab.some(existing => existing.target.trim().toLowerCase() === normalizedNew);
       });
 
       if (distinctNewWords.length === 0) {
-          throw new Error("AI generated words that you already know. I filtered them out. Please try again, I will try harder!");
+          throw new Error("AI generated words that you already know. I filtered them out. Please try again!");
       }
 
       const updatedVocab = appendVocabulary(distinctNewWords, selectedLang);
