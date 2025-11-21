@@ -17,11 +17,12 @@ interface StudyListProps {
   onToggleMastered: (id: string, status: boolean) => void;
   onToggleFavorite: (id: string, status: boolean) => void;
   playbackSpeed?: number;
+  swipeAutoplay: boolean;
 }
 
 export const StudyList: React.FC<StudyListProps> = ({ 
     words, title, onComplete, onBackToHome, speakFast, speakAI, aiLoading, currentLang,
-    onToggleMastered, onToggleFavorite, playbackSpeed = 1.0
+    onToggleMastered, onToggleFavorite, playbackSpeed = 1.0, swipeAutoplay
 }) => {
   const t = TRANSLATIONS[currentLang];
 
@@ -75,7 +76,11 @@ export const StudyList: React.FC<StudyListProps> = ({
 
   const handleNext = () => {
       if (currentIndex < words.length - 1) {
-          setCurrentIndex(prev => prev + 1);
+          const nextIndex = currentIndex + 1;
+          setCurrentIndex(nextIndex);
+          if (swipeAutoplay) {
+              setTimeout(() => speakFast(words[nextIndex].target), 300);
+          }
       } else {
           // Optionally loop or stop
       }
@@ -83,7 +88,11 @@ export const StudyList: React.FC<StudyListProps> = ({
 
   const handlePrev = () => {
       if (currentIndex > 0) {
-          setCurrentIndex(prev => prev - 1);
+          const prevIndex = currentIndex - 1;
+          setCurrentIndex(prevIndex);
+          if (swipeAutoplay) {
+              setTimeout(() => speakFast(words[prevIndex].target), 300);
+          }
       }
   };
 

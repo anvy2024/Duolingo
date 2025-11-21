@@ -23,13 +23,14 @@ interface VocabularyListProps {
   onAddWord: (word: VocabularyWord) => void;
   onEditWord: (word: VocabularyWord) => void;
   initialFilter?: FilterType;
+  swipeAutoplay: boolean;
 }
 
 type ViewMode = 'LIST' | 'GAME_MENU' | 'GAME_QUIZ' | 'GAME_AUDIO' | 'GAME_MATCH' | 'GAME_FILL' | 'GAME_SCRAMBLE';
 
 export const VocabularyList: React.FC<VocabularyListProps> = ({ 
     words, currentLang, onBack, speakFast, speakAI, aiLoading, onDelete, 
-    onToggleMastered, onToggleFavorite, playbackSpeed, onToggleSpeed, onAddWord, onEditWord, initialFilter = 'ALL'
+    onToggleMastered, onToggleFavorite, playbackSpeed, onToggleSpeed, onAddWord, onEditWord, initialFilter = 'ALL', swipeAutoplay
 }) => {
   const t = TRANSLATIONS[currentLang];
   const [viewMode, setViewMode] = useState<ViewMode>('LIST');
@@ -143,6 +144,14 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
       }
   };
 
+  const handleItemClick = (wordId: string) => {
+      // Stop auto play immediately if running
+      if (isAutoPlaying) {
+          stopAutoPlay();
+      }
+      setSelectedWordId(wordId);
+  }
+
   // Auto Play Effect Loop
   useEffect(() => {
     if (!isAutoPlaying || isPaused) return;
@@ -186,7 +195,11 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
       if (!selectedWordId) return;
       const idx = filteredWords.findIndex(w => w.id === selectedWordId);
       if (idx < filteredWords.length - 1) {
-          setSelectedWordId(filteredWords[idx + 1].id);
+          const nextWord = filteredWords[idx + 1];
+          setSelectedWordId(nextWord.id);
+          if (swipeAutoplay) {
+             setTimeout(() => speakFast(nextWord.target), 300);
+          }
       }
   }
 
@@ -194,7 +207,11 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
       if (!selectedWordId) return;
       const idx = filteredWords.findIndex(w => w.id === selectedWordId);
       if (idx > 0) {
-          setSelectedWordId(filteredWords[idx - 1].id);
+          const prevWord = filteredWords[idx - 1];
+          setSelectedWordId(prevWord.id);
+          if (swipeAutoplay) {
+             setTimeout(() => speakFast(prevWord.target), 300);
+          }
       }
   }
 
@@ -690,12 +707,12 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                             <div 
                                 id={`word-card-${word.id}`}
                                 key={word.id} 
-                                onClick={() => !isAutoPlaying && setSelectedWordId(word.id)}
+                                onClick={() => handleItemClick(word.id)}
                                 className={`rounded-2xl p-4 border-2 border-b-4 flex items-center justify-between transition-all duration-500 ${
                                     isPlayingThis 
                                         ? 'bg-yellow-100 border-yellow-300 scale-105 shadow-lg z-10' 
                                         : 'bg-white border-slate-200 hover:bg-slate-50'
-                                } ${!isAutoPlaying ? 'cursor-pointer active:border-b-2 active:translate-y-[2px]' : ''}`}
+                                } ${'cursor-pointer active:border-b-2 active:translate-y-[2px]'}`}
                             >
                                 <div className="flex-1 min-w-0 mr-2">
                                     <h3 className={`font-black text-lg truncate transition-colors ${isPlayingThis ? 'text-yellow-800' : 'text-slate-700 group-hover:text-sky-500'}`}>
@@ -1088,7 +1105,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
       {/* SELECTED WORD MODAL WITH SWIPE */}
       {selectedWord && (
         <div 
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer overflow-hidden"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200 cursor-pointer overflow-hidden"
             onClick={() => setSelectedWordId(null)}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
@@ -1117,20 +1134,20 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                     />
                 </div>
                 
-                <div className="mt-6 flex justify-center gap-4" onClick={(e) => e.stopPropagation()}>
+                <div className="mt-8 flex justify-center gap-4" onClick={(e) => e.stopPropagation()}>
                     <button 
                         onClick={(e) => {
                             setSelectedWordId(null);
                             handleEditClick(e, selectedWord);
                         }}
-                        className="flex items-center gap-2 px-4 py-2 bg-white text-indigo-500 rounded-xl font-bold border-2 border-slate-200 hover:bg-indigo-50 transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 bg-white/10 text-white rounded-xl font-bold border border-white/20 hover:bg-white/20 transition-colors backdrop-blur-md"
                     >
                         <Pencil className="w-4 h-4" /> Edit
                     </button>
 
                      <button 
                         onClick={(e) => handleDelete(e, selectedWord.id)}
-                        className="flex items-center gap-2 px-4 py-2 bg-white text-rose-500 rounded-xl font-bold border-2 border-slate-200 hover:bg-rose-50 transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 bg-rose-500/20 text-rose-300 rounded-xl font-bold border border-rose-500/30 hover:bg-rose-500/30 transition-colors backdrop-blur-md"
                     >
                         <Trash2 className="w-4 h-4" /> {t.delete}
                     </button>

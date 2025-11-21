@@ -8,7 +8,7 @@ import { StudyList } from './components/StudyList';
 import { Flashcard } from './components/Flashcard';
 import { VocabularyList, FilterType } from './components/VocabularyList';
 import { NewsReader } from './components/NewsReader';
-import { ChevronLeft, ChevronRight, CheckCircle, Loader2, X, Download, Upload, AlertTriangle, Globe, BookOpen, ArrowRight, LogOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Loader2, X, Download, Upload, AlertTriangle, Globe, BookOpen, ArrowRight, LogOut, Volume2, VolumeX } from 'lucide-react';
 import { TRANSLATIONS } from './constants/translations';
 
 export default function App() {
@@ -26,7 +26,9 @@ export default function App() {
   // News State
   const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([]);
   
+  // Settings
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+  const [swipeAutoplay, setSwipeAutoplay] = useState(true); // NEW SETTING
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   // REFS FOR AUDIO ENGINE
@@ -482,6 +484,7 @@ export default function App() {
           onToggleMastered={handleToggleMastered}
           onToggleFavorite={handleToggleFavorite}
           playbackSpeed={playbackSpeed}
+          swipeAutoplay={swipeAutoplay}
         />
       )}
 
@@ -501,6 +504,7 @@ export default function App() {
             onAddWord={handleAddWord}
             onEditWord={handleEditWord}
             initialFilter={initialFilter}
+            swipeAutoplay={swipeAutoplay}
           />
       )}
 
@@ -544,6 +548,22 @@ export default function App() {
                                    </button>
                                ))}
                            </div>
+                      </div>
+
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                              {swipeAutoplay ? <Volume2 className="w-6 h-6 text-sky-500" /> : <VolumeX className="w-6 h-6 text-slate-400" />}
+                              <div>
+                                  <p className="font-bold text-slate-700 text-sm">Swipe Audio</p>
+                                  <p className="text-xs text-slate-400 font-bold">Auto-play when swiping</p>
+                              </div>
+                          </div>
+                          <button 
+                            onClick={() => setSwipeAutoplay(!swipeAutoplay)}
+                            className={`w-12 h-7 rounded-full relative transition-colors duration-300 ${swipeAutoplay ? 'bg-sky-500' : 'bg-slate-300'}`}
+                          >
+                              <div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-transform duration-300 shadow-sm ${swipeAutoplay ? 'left-6' : 'left-1'}`}></div>
+                          </button>
                       </div>
 
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">

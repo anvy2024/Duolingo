@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { VocabularyWord, Language } from '../types';
-import { Volume2, CheckCircle, Circle, Zap, Sparkles, Loader2, Heart, Radio } from 'lucide-react';
+import { Volume2, CheckCircle, Circle, Zap, Sparkles, Loader2, Heart, Radio, Copy } from 'lucide-react';
 
 interface FlashcardProps {
   word: VocabularyWord;
@@ -62,11 +62,11 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
   };
 
   return (
-    <div className={`w-full max-w-xs aspect-[3/4] ${isViewMode ? 'max-h-[500px]' : 'max-h-[500px]'} perspective-1000 mx-auto my-4 lg:my-0 cursor-pointer group select-none`} onClick={handleCardClick}>
+    <div className={`w-full max-w-sm aspect-[3/5] ${isViewMode ? 'max-h-[65vh]' : 'max-h-[600px]'} perspective-1000 mx-auto my-4 lg:my-0 cursor-pointer group select-none`} onClick={handleCardClick}>
       <div className={`relative w-full h-full transition-transform duration-500 transform-style-3d ${isFlipped ? 'rotate-y-180' : ''}`}>
         
         {/* FRONT SIDE */}
-        <div className={`absolute w-full h-full bg-white rounded-3xl border-2 border-slate-200 border-b-[6px] backface-hidden flex flex-col items-center justify-between p-5 shadow-sm ${word.mastered ? 'border-green-400 bg-green-50' : ''}`}>
+        <div className={`absolute w-full h-full bg-white rounded-[2.5rem] border-2 border-slate-200 border-b-[8px] backface-hidden flex flex-col items-center justify-between p-6 shadow-sm ${word.mastered ? 'border-green-400 bg-green-50/30' : ''}`}>
           
           {/* Top Row: Badges (Left) & Actions (Right) */}
           <div className="w-full flex justify-between items-start shrink-0 relative z-10">
@@ -108,13 +108,13 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
           </div>
 
           {/* Main Word Display */}
-          <div className="flex flex-col items-center justify-center w-full text-center flex-1 overflow-hidden">
-            <div className={`${getFontSize(displayTarget)} font-black text-slate-700 mb-4 break-words w-full tracking-tight overflow-y-auto max-h-[60%]`}>
+          <div className="flex flex-col items-center justify-center w-full text-center flex-1 overflow-hidden py-4">
+            <div className={`${getFontSize(displayTarget)} font-black text-slate-700 mb-8 break-words w-full tracking-tight overflow-y-auto max-h-[60%]`}>
                 {displayTarget}
             </div>
             
             {/* AUDIO BUTTONS */}
-            <div className="flex items-center justify-center gap-4 w-full shrink-0 mb-4">
+            <div className="flex items-center justify-center gap-4 w-full shrink-0">
                 <button 
                     onClick={(e) => handleAudioClick(e, 'fast', displayTarget)}
                     className="flex flex-col items-center justify-center w-14 h-14 rounded-2xl bg-slate-100 text-slate-400 border-2 border-slate-200 border-b-4 hover:bg-slate-200 hover:text-sky-500 hover:border-sky-300 active:border-b-0 active:translate-y-1 transition-all"
@@ -138,18 +138,18 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
             </div>
           </div>
 
-          {/* EXAMPLE SENTENCE AREA (REPLACED INPUT) */}
-          <div className="w-full mb-2 shrink-0 z-10">
+          {/* EXAMPLE SENTENCE AREA (CLEANER) */}
+          <div className="w-full mb-8 shrink-0 z-10 text-center px-2">
                {!isPhraseMode && (
-                   <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex items-center gap-3 group/example" onClick={(e) => e.stopPropagation()}>
-                       <p className="flex-1 text-sm font-medium text-slate-600 line-clamp-2 text-left italic">
+                   <div className="flex flex-col items-center gap-2 group/example" onClick={(e) => e.stopPropagation()}>
+                       <p className="text-lg leading-snug font-medium text-slate-600 italic">
                            "{word.example.target}"
                        </p>
                        <button 
                            onClick={(e) => handleAudioClick(e, 'fast', word.example.target)}
-                           className="p-2 bg-white rounded-xl text-sky-500 border border-sky-100 shadow-sm active:scale-95 transition-transform"
+                           className="p-2 rounded-full text-sky-400 hover:bg-sky-50 hover:text-sky-600 transition-colors"
                        >
-                           <Volume2 className="w-4 h-4" />
+                           <Volume2 className="w-5 h-5" />
                        </button>
                    </div>
                )}
@@ -161,56 +161,66 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
         </div>
 
         {/* BACK SIDE */}
-        <div className={`absolute w-full h-full bg-white rounded-3xl border-2 border-slate-200 border-b-[6px] backface-hidden rotate-y-180 flex flex-col p-5 overflow-y-auto ${word.mastered ? 'border-green-400' : ''}`}>
-             <div className="flex justify-between items-center border-b-2 border-slate-100 pb-3 mb-3 shrink-0">
-                 <div className="flex-1">
-                     <h3 className="text-xl font-black text-slate-700 line-clamp-3">{word.vietnamese}</h3>
+        <div className={`absolute w-full h-full bg-white rounded-[2.5rem] border-2 border-slate-200 border-b-[8px] backface-hidden rotate-y-180 flex flex-col p-6 overflow-hidden ${word.mastered ? 'border-green-400' : ''}`}>
+             
+             {/* Header: Vietnamese Meaning */}
+             <div className="flex justify-between items-start border-b-2 border-slate-100 pb-4 mb-4 shrink-0">
+                 <div className="flex-1 mr-2">
+                     <p className="text-xs text-slate-400 uppercase font-bold mb-1">Nghĩa tiếng Việt</p>
+                     <h3 className="text-2xl font-black text-slate-700 leading-tight">{word.vietnamese}</h3>
                  </div>
-                 <div className="flex gap-2 shrink-0 ml-2">
+                 <div className="flex gap-2 shrink-0">
                     <button 
                         onClick={(e) => handleAudioClick(e, 'fast', displayTarget)}
-                        className="p-2 rounded-xl bg-slate-100 text-slate-400 hover:text-sky-500 transition-colors"
+                        className="p-3 rounded-xl bg-slate-100 text-slate-400 hover:text-sky-500 transition-colors"
                     >
                         <Zap className="w-5 h-5" />
                     </button>
                  </div>
              </div>
 
-             <div className="space-y-4 flex-1 overflow-y-auto custom-scrollbar">
-                 <div className="bg-slate-50 p-4 rounded-2xl border-2 border-slate-100">
-                    <p className="text-xs text-slate-400 uppercase font-bold mb-2">Phát âm</p>
-                    <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                             <span className="text-xs font-bold text-slate-400 w-8">IPA</span>
-                             <span className="font-mono text-slate-600 text-sm bg-white px-2 py-1 rounded border border-slate-200">{word.ipa}</span>
-                        </div>
-                        {word.viet_pronunciation && (
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs font-bold text-slate-400 w-8">Bồi</span>
-                                <span className="italic text-sky-600 text-base font-bold">{word.viet_pronunciation}</span>
-                            </div>
-                        )}
+             {/* Scrollable Content */}
+             <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-6">
+                 
+                 {/* Pronunciation Block */}
+                 <div className="bg-slate-50 p-4 rounded-2xl border-2 border-slate-100 shrink-0">
+                    <div className="flex items-center gap-2 mb-2">
+                         <span className="text-xs font-bold text-white bg-slate-400 px-2 py-0.5 rounded uppercase">IPA</span>
+                         <span className="font-mono text-slate-600 text-lg font-medium tracking-wide">{word.ipa}</span>
                     </div>
+                    {word.viet_pronunciation && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-white bg-sky-400 px-2 py-0.5 rounded uppercase">Bồi</span>
+                            <span className="italic text-sky-600 text-xl font-bold">{word.viet_pronunciation}</span>
+                        </div>
+                    )}
                  </div>
 
+                 {/* Example Block */}
                  {!isPhraseMode && (
-                     <div>
-                        <p className="text-xs text-slate-400 uppercase font-bold mb-2">Ví dụ mẫu</p>
-                        <div className="p-4 rounded-2xl bg-sky-50 border-2 border-sky-100 space-y-3">
-                            <div className="flex items-start justify-between gap-2">
-                                <p className="font-bold text-slate-700 text-lg leading-snug">{word.example.target}</p>
+                     <div className="flex-1">
+                        <p className="text-xs text-slate-400 uppercase font-bold mb-2 pl-1">Ví dụ mẫu</p>
+                        <div className="p-5 rounded-2xl bg-sky-50 border-2 border-sky-100 space-y-4">
+                            <div>
+                                <div className="flex items-start justify-between gap-2 mb-1">
+                                    <p className="font-bold text-slate-700 text-xl leading-snug">{word.example.target}</p>
+                                </div>
+                                {word.example.viet_pronunciation && (
+                                    <p className="text-sm text-slate-500 italic font-medium mb-2">{word.example.viet_pronunciation}</p>
+                                )}
+                            </div>
+                            
+                            <div className="w-full h-0.5 bg-sky-200/50"></div>
+                            
+                            <div className="flex items-start gap-3">
+                                <p className="text-base text-slate-600 font-semibold leading-relaxed">{word.example.vietnamese}</p>
                                 <button 
                                     onClick={(e) => handleAudioClick(e, 'fast', word.example.target)}
-                                    className="bg-white text-sky-500 p-2 rounded-xl border-b-2 border-sky-100 active:border-b-0 active:translate-y-0.5 shrink-0 transition-all hover:bg-sky-50"
+                                    className="ml-auto bg-white text-sky-500 p-2 rounded-xl border-b-2 border-sky-100 active:border-b-0 active:translate-y-0.5 shrink-0 transition-all hover:bg-white/80 shadow-sm"
                                 >
                                     <Volume2 className="w-5 h-5" />
                                 </button>
                             </div>
-                            {word.example.viet_pronunciation && (
-                                <p className="text-sm text-slate-500 italic font-medium">{word.example.viet_pronunciation}</p>
-                            )}
-                            <div className="w-full h-0.5 bg-sky-200/50"></div>
-                            <p className="text-sm text-slate-600 font-medium">{word.example.vietnamese}</p>
                         </div>
                      </div>
                  )}
