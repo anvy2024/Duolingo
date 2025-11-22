@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { VocabularyWord, Language } from '../types';
-import { Zap, Sparkles, Search, ArrowLeft, Trash2, X, Heart, CheckCircle, Plus, Save, Loader2, Gamepad2, Play, Pause, Square, Clock, Circle, Pencil, Edit3, Shuffle, ChevronLeft, ChevronRight, HelpCircle, Headphones, Grid, Volume2 } from 'lucide-react';
+import { Zap, Sparkles, Search, ArrowLeft, Trash2, X, Heart, CheckCircle, Plus, Save, Loader2, Gamepad2, Play, Pause, Square, Clock, Circle, Pencil, Edit3, Shuffle, ChevronLeft, ChevronRight, HelpCircle, Headphones, Grid, Volume2, Repeat } from 'lucide-react';
 import { Flashcard } from './Flashcard';
 import { generateSingleWordDetails } from '../services/geminiService';
 import { TRANSLATIONS } from '../constants/translations';
@@ -26,6 +26,8 @@ interface VocabularyListProps {
   initialFilter?: FilterType;
   swipeAutoplay: boolean;
   fontSize?: FontSize;
+  loopAudio: boolean;
+  onToggleLoop: () => void;
 }
 
 type ViewMode = 'LIST' | 'GAME_MENU' | 'GAME_QUIZ' | 'GAME_AUDIO' | 'GAME_MATCH' | 'GAME_FILL' | 'GAME_SCRAMBLE';
@@ -33,7 +35,7 @@ type ViewMode = 'LIST' | 'GAME_MENU' | 'GAME_QUIZ' | 'GAME_AUDIO' | 'GAME_MATCH'
 export const VocabularyList: React.FC<VocabularyListProps> = ({ 
     words, currentLang, onBack, speakFast, speakAI, speakBestAvailable, aiLoading, onDelete, 
     onToggleMastered, onToggleFavorite, playbackSpeed, onToggleSpeed, onAddWord, onEditWord, initialFilter = 'ALL', swipeAutoplay,
-    fontSize = 'normal'
+    fontSize = 'normal', loopAudio, onToggleLoop
 }) => {
   const t = TRANSLATIONS[currentLang];
   const [viewMode, setViewMode] = useState<ViewMode>('LIST');
@@ -121,10 +123,6 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   useEffect(() => {
       const handleGlobalKeyDown = (e: KeyboardEvent) => {
           // If modal is active, let the modal specific handler take care of navigation
-          // But we might want to handle Escape if the modal handler is not focused? 
-          // Actually, the modal handler is attached when selectedWordId is present.
-          // So here we handle general view navigation.
-          
           if (selectedWordId) return; // Handled by modal effect
 
           if (e.key === 'Escape') {
@@ -207,7 +205,11 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
     if (!isAutoPlaying || isPaused) return;
 
     if (currentPlayIndex >= playQueue.length) {
-        stopAutoPlay();
+        if (loopAudio) {
+            setCurrentPlayIndex(0);
+        } else {
+            stopAutoPlay();
+        }
         return;
     }
 
@@ -239,7 +241,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
         clearTimeout(startDelay);
         if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
     };
-  }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue, speakBestAvailable, playDelay]);
+  }, [currentPlayIndex, isAutoPlaying, isPaused, playQueue, speakBestAvailable, playDelay, loopAudio]);
 
   // --- MODAL SWIPE & KEYBOARD LOGIC ---
   const handleNextWord = () => {
@@ -732,6 +734,15 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                                 {playQueue.length > 0 ? `${currentPlayIndex + 1}/${playQueue.length}` : '0/0'}
                             </span>
                             
+                            {/* Loop Button - ADDED EXPLICITLY */}
+                            <button 
+                                onClick={onToggleLoop}
+                                className={`p-2 rounded-xl transition-colors ${loopAudio ? 'bg-green-500 text-white shadow-md' : 'bg-slate-200 text-slate-400'}`}
+                                title={t.loop}
+                            >
+                                <Repeat className="w-5 h-5" />
+                            </button>
+
                             <button 
                                 onClick={() => setShowSettings(!showSettings)}
                                 className={`p-2 rounded-xl ${showSettings ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}
@@ -782,21 +793,25 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
             )}
         </div>
         
-        {/* Auto Play Settings */}
+        {/* Auto Play Settings - Reduced to just Delay slider */}
         {isAutoPlaying && showSettings && (
-            <div className="absolute top-full right-4 mt-2 w-48 bg-white rounded-xl shadow-xl border-2 border-slate-100 p-3 z-30 animate-in slide-in-from-top-2">
-                <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs font-bold text-slate-500 uppercase">{t.delay}: {playDelay/1000}s</span>
+            <div className="absolute top-full right-4 mt-2 w-56 bg-white rounded-xl shadow-xl border-2 border-slate-100 p-4 z-30 animate-in slide-in-from-top-2 space-y-4">
+                <div>
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                             <Clock className="w-3 h-3" /> {t.delay}: {playDelay/1000}s
+                        </span>
+                    </div>
+                    <input 
+                        type="range" 
+                        min="1000" 
+                        max="5000" 
+                        step="500"
+                        value={playDelay}
+                        onChange={(e) => setPlayDelay(Number(e.target.value))}
+                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                    />
                 </div>
-                <input 
-                    type="range" 
-                    min="1000" 
-                    max="5000" 
-                    step="500"
-                    value={playDelay}
-                    onChange={(e) => setPlayDelay(Number(e.target.value))}
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                />
             </div>
         )}
         

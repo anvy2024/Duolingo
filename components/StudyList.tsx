@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { VocabularyWord, Language } from '../types';
-import { Zap, Sparkles, ArrowRight, Volume2, Home, Heart, CheckCircle, Circle, Play, Pause, Square, Clock, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Zap, Sparkles, ArrowRight, Volume2, Home, Heart, CheckCircle, Circle, Play, Pause, Square, Clock, X, ChevronLeft, ChevronRight, Repeat } from 'lucide-react';
 import { Flashcard } from './Flashcard';
 import { TRANSLATIONS } from '../constants/translations';
 import { FontSize } from '../App';
@@ -20,12 +20,14 @@ interface StudyListProps {
   playbackSpeed?: number;
   swipeAutoplay: boolean;
   fontSize?: FontSize;
+  loopAudio: boolean;
+  onToggleLoop: () => void;
 }
 
 export const StudyList: React.FC<StudyListProps> = ({ 
     words, title, onComplete, onBackToHome, speakFast, speakAI, speakBestAvailable, aiLoading, currentLang,
     onToggleMastered, onToggleFavorite, playbackSpeed = 1.0, swipeAutoplay,
-    fontSize = 'normal'
+    fontSize = 'normal', loopAudio, onToggleLoop
 }) => {
   const t = TRANSLATIONS[currentLang];
 
@@ -209,7 +211,12 @@ export const StudyList: React.FC<StudyListProps> = ({
              if (currentIndex < words.length - 1) {
                  setCurrentIndex(prev => prev + 1);
              } else {
-                 stopAutoPlay();
+                 // Loop logic
+                 if (loopAudio) {
+                     setCurrentIndex(0);
+                 } else {
+                     stopAutoPlay();
+                 }
              }
         }, playDelay);
     };
@@ -223,7 +230,7 @@ export const StudyList: React.FC<StudyListProps> = ({
         clearTimeout(initialDelay);
         if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
     };
-  }, [currentIndex, isAutoPlaying, isPaused, words, speakBestAvailable, playDelay]);
+  }, [currentIndex, isAutoPlaying, isPaused, words, speakBestAvailable, playDelay, loopAudio]);
 
 
   const currentWord = words[currentIndex];
@@ -261,6 +268,15 @@ export const StudyList: React.FC<StudyListProps> = ({
             {isAutoPlaying ? (
                 // AUTO PLAY CONTROLS
                 <div className="flex items-center gap-2 animate-in slide-in-from-right duration-300">
+                    {/* Loop Button - Added Explicitly - CHANGED TO GREEN WHEN ACTIVE */}
+                    <button 
+                        onClick={onToggleLoop}
+                        className={`p-2 rounded-xl transition-colors ${loopAudio ? 'bg-green-500 text-white shadow-md' : 'bg-slate-200 text-slate-400'}`}
+                        title={t.loop}
+                    >
+                        <Repeat className="w-5 h-5" />
+                    </button>
+
                     <button 
                         onClick={() => setShowSettings(!showSettings)}
                         className={`p-2 rounded-xl ${showSettings ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}
@@ -296,19 +312,24 @@ export const StudyList: React.FC<StudyListProps> = ({
 
       {/* Auto Play Settings Dropdown */}
       {isAutoPlaying && showSettings && (
-          <div className="absolute top-[72px] right-4 w-48 bg-white rounded-xl shadow-xl border-2 border-slate-100 p-3 z-30 animate-in slide-in-from-top-2">
-              <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-bold text-slate-500 uppercase">{t.delay}: {playDelay/1000}s</span>
+          <div className="absolute top-[72px] right-4 w-56 bg-white rounded-xl shadow-xl border-2 border-slate-100 p-4 z-30 animate-in slide-in-from-top-2 space-y-4">
+              {/* Delay Slider */}
+              <div>
+                  <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> {t.delay}: {playDelay/1000}s
+                      </span>
+                  </div>
+                  <input 
+                      type="range" 
+                      min="1000" 
+                      max="5000" 
+                      step="500"
+                      value={playDelay}
+                      onChange={(e) => setPlayDelay(Number(e.target.value))}
+                      className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                  />
               </div>
-              <input 
-                  type="range" 
-                  min="1000" 
-                  max="5000" 
-                  step="500"
-                  value={playDelay}
-                  onChange={(e) => setPlayDelay(Number(e.target.value))}
-                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-              />
           </div>
       )}
 

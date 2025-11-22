@@ -7,7 +7,7 @@ import { StudyList } from './components/StudyList';
 import { Flashcard } from './components/Flashcard';
 import { VocabularyList, FilterType } from './components/VocabularyList';
 import { NewsReader } from './components/NewsReader';
-import { ChevronLeft, ChevronRight, CheckCircle, Loader2, X, Download, Upload, AlertTriangle, Globe, BookOpen, ArrowRight, LogOut, Volume2, VolumeX, Type, Lock, KeyRound } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Loader2, X, Download, Upload, AlertTriangle, Globe, BookOpen, ArrowRight, LogOut, Volume2, VolumeX, Type, Lock, KeyRound, Repeat } from 'lucide-react';
 import { TRANSLATIONS } from './constants/translations';
 
 export type FontSize = 'normal' | 'large' | 'huge';
@@ -39,6 +39,7 @@ export default function App() {
   const [playbackSpeed, setPlaybackSpeed] = useState(initialSettings.playbackSpeed);
   const [swipeAutoplay, setSwipeAutoplay] = useState(initialSettings.swipeAutoplay);
   const [fontSize, setFontSize] = useState<FontSize>(initialSettings.fontSize); 
+  const [loopAudio, setLoopAudio] = useState(initialSettings.loopAudio ?? false); 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   // REFS FOR AUDIO ENGINE
@@ -74,8 +75,8 @@ export default function App() {
 
   // Persist settings changes
   useEffect(() => {
-      saveSettings({ fontSize, playbackSpeed, swipeAutoplay });
-  }, [fontSize, playbackSpeed, swipeAutoplay]);
+      saveSettings({ fontSize, playbackSpeed, swipeAutoplay, loopAudio });
+  }, [fontSize, playbackSpeed, swipeAutoplay, loopAudio]);
 
   // Load vocabulary when language changes
   const refreshData = useCallback(() => {
@@ -91,6 +92,7 @@ export default function App() {
       setFontSize(settings.fontSize);
       setPlaybackSpeed(settings.playbackSpeed);
       setSwipeAutoplay(settings.swipeAutoplay);
+      setLoopAudio(settings.loopAudio ?? false);
   }, [selectedLang]);
 
   useEffect(() => {
@@ -172,6 +174,10 @@ export default function App() {
         return 1.0;
     });
   };
+
+  const toggleLoop = useCallback(() => {
+      setLoopAudio(prev => !prev);
+  }, []);
 
   // --- SPEECH LOGIC ---
 
@@ -818,6 +824,8 @@ export default function App() {
           playbackSpeed={playbackSpeed}
           swipeAutoplay={swipeAutoplay}
           fontSize={fontSize}
+          loopAudio={loopAudio} 
+          onToggleLoop={toggleLoop} 
         />
       )}
 
@@ -840,6 +848,8 @@ export default function App() {
             initialFilter={initialFilter}
             swipeAutoplay={swipeAutoplay}
             fontSize={fontSize}
+            loopAudio={loopAudio} 
+            onToggleLoop={toggleLoop} 
           />
       )}
 
@@ -913,6 +923,22 @@ export default function App() {
                                    </button>
                                ))}
                            </div>
+                      </div>
+
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                              <Repeat className={`w-6 h-6 ${loopAudio ? 'text-indigo-500' : 'text-slate-400'}`} />
+                              <div>
+                                  <p className="font-bold text-slate-700 text-sm">Loop Auto-Play</p>
+                                  <p className="text-xs text-slate-400 font-bold">Repeat list when finished</p>
+                              </div>
+                          </div>
+                          <button 
+                            onClick={toggleLoop}
+                            className={`w-12 h-7 rounded-full relative transition-colors duration-300 ${loopAudio ? 'bg-indigo-500' : 'bg-slate-300'}`}
+                          >
+                              <div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-transform duration-300 shadow-sm ${loopAudio ? 'left-6' : 'left-1'}`}></div>
+                          </button>
                       </div>
 
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">

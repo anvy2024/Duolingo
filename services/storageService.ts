@@ -103,6 +103,7 @@ export interface AppSettings {
     fontSize: FontSize;
     playbackSpeed: number;
     swipeAutoplay: boolean;
+    loopAudio: boolean;
 }
 
 export interface FullBackup {
@@ -402,7 +403,8 @@ export const loadSettings = (): AppSettings => {
     const DEFAULT_SETTINGS: AppSettings = {
         fontSize: 'normal',
         playbackSpeed: 1.0,
-        swipeAutoplay: true
+        swipeAutoplay: true,
+        loopAudio: false
     };
     try {
         const str = localStorage.getItem(SETTINGS_KEY);
