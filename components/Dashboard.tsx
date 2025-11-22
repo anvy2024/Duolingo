@@ -295,18 +295,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
                              </label>
                              <div className="flex items-center gap-4">
                                  <button 
-                                    onClick={() => setWordCount(Math.max(1, wordCount - 1))}
+                                    onClick={() => setWordCount(Math.max(1, wordCount - 5))}
                                     className="p-3 bg-white rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-100 active:scale-95"
                                  >
                                      <Minus className="w-5 h-5" />
                                  </button>
                                  
-                                 <div className="flex-1 text-center">
-                                     <span className="text-3xl font-black text-slate-700">{wordCount}</span>
-                                 </div>
+                                 <input 
+                                    type="number" 
+                                    min="1"
+                                    max="200"
+                                    value={wordCount}
+                                    onChange={(e) => {
+                                        const val = parseInt(e.target.value);
+                                        if (!isNaN(val) && val > 0) setWordCount(Math.min(val, 200));
+                                        else if (e.target.value === '') setWordCount(1);
+                                    }}
+                                    className="flex-1 bg-transparent text-center text-3xl font-black text-slate-700 outline-none border-b-2 border-transparent focus:border-slate-300 transition-all appearance-none m-0"
+                                 />
 
                                  <button 
-                                    onClick={() => setWordCount(Math.min(20, wordCount + 1))}
+                                    onClick={() => setWordCount(Math.min(200, wordCount + 5))}
                                     className="p-3 bg-white rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-100 active:scale-95"
                                  >
                                      <Plus className="w-5 h-5" />

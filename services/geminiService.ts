@@ -21,131 +21,192 @@ export type GenerationTopic = 'general' | 'common-verbs' | 'irregular-verbs';
 
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
 
+// Helper to get a random sample of strings to avoid huge prompts
+const getRandomSample = (arr: string[], size: number) => {
+    if (arr.length <= size) return arr;
+    const shuffled = [...arr].sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, size);
+};
+
 export const generateVocabularyBatch = async (
     existingWords: string[] = [], 
     topic: GenerationTopic = 'general', 
     lang: Language,
-    count: number = 10
+    requestedCount: number = 10
 ): Promise<VocabularyWord[]> => {
-  // IMPROVED: Send a larger, shuffled sample of existing words to the model to avoid repetition
-  // We prioritize sending the most recently learned words + a random sample of older ones
-  const recentWords = existingWords.slice(-50);
-  const olderWords = existingWords.slice(0, -50).sort(() => 0.5 - Math.random()).slice(0, 150);
-  const sampleExisting = [...recentWords, ...olderWords].join(", ");
   
+  const accumulatedWords: VocabularyWord[] = [];
+  // Normalize existing words for strict deduplication check
+  const existingSet = new Set(existingWords.map(w => w.toLowerCase().trim()));
+  // Track words generated in this specific batch to prevent self-duplicates
+  const currentBatchSet = new Set<string>();
+
   const modelId = "gemini-2.5-flash";
   
   let targetLang = 'French';
   let level = 'A1 (Beginner)';
+  if (lang === 'en') { targetLang = 'English'; level = 'B1 (Intermediate)'; }
+  else if (lang === 'zh') { targetLang = 'Chinese (Mandarin, Simplified)'; level = 'A1 (Beginner)'; }
+  else if (lang === 'es') { targetLang = 'Spanish'; level = 'A1 (Beginner)'; }
   
-  if (lang === 'en') {
-      targetLang = 'English';
-      level = 'B1 (Intermediate)';
-  } else if (lang === 'zh') {
-      targetLang = 'Chinese (Mandarin, Simplified)';
-      level = 'A1 (Beginner)';
-  } else if (lang === 'es') {
-      targetLang = 'Spanish';
-      level = 'A1 (Beginner)';
-  }
-  
-  let specificInstruction = "";
-  if (topic === 'common-verbs') {
-    specificInstruction = `Generate ${count} useful ${targetLang} verbs (infinitive) for ${level} students.`;
-  } else if (topic === 'irregular-verbs') {
-    specificInstruction = `Generate ${count} common irregular ${targetLang} verbs for ${level} students.`;
-  } else {
-    specificInstruction = `Generate ${count} DISTINCT, useful ${targetLang} vocabulary words suitable for ${level} level (mix of nouns, verbs, adjectives).`;
-  }
+  // Safety break to prevent infinite loops if AI runs out of common words
+  // Increased limit to give AI more chances to fill the quota
+  let maxLoops = 20; 
+  let loopCount = 0;
 
-  // Logic for Vietnamese Pronunciation
-  let pronunciationInstruction = '4. Provide "Vietnamese Pronunciation Guide" (Phiên âm bồi).';
-  let sentencePronunciationInstruction = '7. Vietnamese pronunciation for the sentence.';
-  let ipaInstruction = "3. Provide IPA.";
+  // --- MAIN GENERATION LOOP ---
+  // We keep looping until we have exactly the requestedCount
+  while (accumulatedWords.length < requestedCount && loopCount < maxLoops) {
+      loopCount++;
+      const remainingNeeded = requestedCount - accumulatedWords.length;
+      
+      // Don't ask for too many at once to ensure JSON stability. Cap at 40 per request.
+      // Ask for a slight buffer (+5) to cover potential edge case duplicates.
+      const fetchSize = Math.min(remainingNeeded + 5, 40); 
+      const effectiveRequestSize = Math.max(fetchSize, 5); // Minimum request size
 
-  if (lang === 'en') {
-      pronunciationInstruction = '4. For "viet_pronunciation", return an EMPTY STRING.';
-      sentencePronunciationInstruction = '7. For sentence pronunciation, return an EMPTY STRING.';
-  } else if (lang === 'zh') {
-      ipaInstruction = "3. Provide Pinyin with tone marks in the 'ipa' field (e.g., nǐ hǎo).";
-      pronunciationInstruction = '4. Provide "Vietnamese Pronunciation Guide" (Bồi) in viet_pronunciation.';
-  }
-  
-  const prompt = `
-    You are an expert ${targetLang} teacher for Vietnamese students.
-    ${specificInstruction}
-    
-    CRITICAL RULE: DO NOT include any words from this list: [${sampleExisting}].
-    I need COMPLETELY NEW words.
-    
-    Requirements:
-    1. Word must be in ${targetLang} (${level} difficulty).
-    2. Provide meaning in Vietnamese.
-    ${ipaInstruction}
-    ${pronunciationInstruction}
-    5. Simple example sentence suited for ${level}.
-    6. Vietnamese translation of the sentence.
-    ${sentencePronunciationInstruction}
-    8. STRICTLY CHECK the exclude list. If a word is in [${sampleExisting}], DO NOT generate it.
-    
-    Return ONLY valid JSON array.
-  `;
+      console.log(`Loop ${loopCount}: Need ${remainingNeeded} more. Asking AI for ${effectiveRequestSize} candidates...`);
 
-  try {
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              target: { type: Type.STRING },
-              vietnamese: { type: Type.STRING },
-              ipa: { type: Type.STRING },
-              viet_pronunciation: { type: Type.STRING },
-              example: {
+      // Logic for Pronunciation format
+      let pronunciationInstruction = '4. Provide "Vietnamese Pronunciation Guide" (Phiên âm bồi).';
+      let sentencePronunciationInstruction = '7. Vietnamese pronunciation for the sentence.';
+      let ipaInstruction = "3. Provide IPA.";
+
+      if (lang === 'en') {
+          pronunciationInstruction = '4. For "viet_pronunciation", return an EMPTY STRING.';
+          sentencePronunciationInstruction = '7. For sentence pronunciation, return an EMPTY STRING.';
+      } else if (lang === 'zh') {
+          ipaInstruction = "3. Provide Pinyin with tone marks in the 'ipa' field (e.g., nǐ hǎo).";
+          pronunciationInstruction = '4. Provide "Vietnamese Pronunciation Guide" (Bồi) in viet_pronunciation.';
+      }
+
+      // Specific Topic Instruction
+      let specificInstruction = "";
+      if (topic === 'common-verbs') {
+        specificInstruction = `Generate ${effectiveRequestSize} extremely common ${targetLang} verbs (infinitive) for ${level}.`;
+      } else if (topic === 'irregular-verbs') {
+        specificInstruction = `Generate ${effectiveRequestSize} common irregular ${targetLang} verbs for ${level}.`;
+      } else {
+        specificInstruction = `Generate ${effectiveRequestSize} VERY COMMON, high-frequency ${targetLang} words for ${level} (nouns, verbs, adjectives).`;
+      }
+
+      // EXCLUSION LIST LOGIC
+      // IMPORTANT: We send a VERY LARGE sample (up to 3000 words) to ensure AI knows what to avoid.
+      // This minimizes the chance of AI returning duplicates that we have to filter out.
+      const sampleExisting = getRandomSample(existingWords, 3000).join(", ");
+      
+      // We ALSO send what we just generated in previous loops of this session
+      const alreadyGeneratedInSession = Array.from(currentBatchSet).join(", ");
+
+      const prompt = `
+        You are an expert ${targetLang} teacher for Vietnamese students.
+        ${specificInstruction}
+        
+        CRITICAL EXCLUSION RULES:
+        1. DO NOT generate any word found in this list: [${sampleExisting}].
+        2. DO NOT generate words from this current session list: [${alreadyGeneratedInSession}].
+        3. If the requested word count is high, dig deeper into common A1/A2 vocabulary but strictly avoid the exclusion list.
+        
+        Format Requirements:
+        1. Word must be in ${targetLang} (${level}).
+        2. Meaning in Vietnamese.
+        ${ipaInstruction}
+        ${pronunciationInstruction}
+        5. Simple example sentence suited for ${level}.
+        6. Vietnamese translation of the sentence.
+        ${sentencePronunciationInstruction}
+        
+        Return ONLY valid JSON array.
+      `;
+
+      try {
+        const response = await ai.models.generateContent({
+          model: modelId,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
                 type: Type.OBJECT,
                 properties: {
-                    target: { type: Type.STRING },
-                    vietnamese: { type: Type.STRING },
-                    viet_pronunciation: { type: Type.STRING }
+                  target: { type: Type.STRING },
+                  vietnamese: { type: Type.STRING },
+                  ipa: { type: Type.STRING },
+                  viet_pronunciation: { type: Type.STRING },
+                  example: {
+                    type: Type.OBJECT,
+                    properties: {
+                        target: { type: Type.STRING },
+                        vietnamese: { type: Type.STRING },
+                        viet_pronunciation: { type: Type.STRING }
+                    },
+                    required: ["target", "vietnamese", "viet_pronunciation"]
+                  }
                 },
-                required: ["target", "vietnamese", "viet_pronunciation"]
+                required: ["target", "vietnamese", "ipa", "viet_pronunciation", "example"]
               }
-            },
-            required: ["target", "vietnamese", "ipa", "viet_pronunciation", "example"]
+            }
           }
+        });
+
+        const text = response.text;
+        if (!text) throw new Error("No response from Gemini");
+
+        const rawData = JSON.parse(text);
+        
+        // --- STRICT FILTERING ---
+        let validWordsAdded = 0;
+        
+        for (const item of rawData) {
+            if (accumulatedWords.length >= requestedCount) break;
+
+            const normalizedTarget = item.target.toLowerCase().trim();
+
+            // 1. Check against User's History
+            const isLearned = existingSet.has(normalizedTarget);
+            // 2. Check against Session History
+            const isDuplicateInSession = currentBatchSet.has(normalizedTarget);
+
+            if (!isLearned && !isDuplicateInSession) {
+                const newWord: VocabularyWord = {
+                    id: generateId(),
+                    target: item.target, // Keep original casing for display
+                    vietnamese: item.vietnamese,
+                    ipa: item.ipa,
+                    viet_pronunciation: item.viet_pronunciation,
+                    example: {
+                        target: item.example.target,
+                        vietnamese: item.example.vietnamese,
+                        viet_pronunciation: item.example.viet_pronunciation
+                    },
+                    learnedAt: Date.now(),
+                    category: topic
+                };
+                
+                accumulatedWords.push(newWord);
+                currentBatchSet.add(normalizedTarget);
+                validWordsAdded++;
+            }
         }
+        
+        console.log(`Loop ${loopCount} report: Received ${rawData.length} items. Added ${validWordsAdded} new unique words. Progress: ${accumulatedWords.length}/${requestedCount}`);
+
+        // If we tried to get words but AI only gave us duplicates (validWordsAdded === 0),
+        // and we are stuck, we break to avoid infinite loops, but we give it a few tries (loopCount > 5).
+        if (validWordsAdded === 0 && loopCount > 5) {
+             console.warn("AI is struggling to find new non-duplicate words. Stopping to avoid infinite loop.");
+             break;
+        }
+
+      } catch (error) {
+        console.error("Error in generation loop:", error);
+        // If critical error, stop
+        if (loopCount > maxLoops) break;
       }
-    });
-
-    const text = response.text;
-    if (!text) throw new Error("No response from Gemini");
-
-    const rawData = JSON.parse(text);
-    
-    return rawData.map((item: any) => ({
-        id: generateId(),
-        target: item.target,
-        vietnamese: item.vietnamese,
-        ipa: item.ipa,
-        viet_pronunciation: item.viet_pronunciation,
-        example: {
-            target: item.example.target,
-            vietnamese: item.example.vietnamese,
-            viet_pronunciation: item.example.viet_pronunciation
-        },
-        learnedAt: Date.now(),
-        category: topic
-    }));
-
-  } catch (error) {
-    console.error("Error generating vocabulary:", error);
-    throw error;
   }
+
+  return accumulatedWords;
 };
 
 export const generateSingleWordDetails = async (word: string, lang: Language): Promise<Omit<VocabularyWord, 'id' | 'learnedAt' | 'mastered' | 'isFavorite'>> => {
