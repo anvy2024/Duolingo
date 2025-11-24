@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppMode, VocabularyWord, Language, NewsArticle } from './types';
 import { generateVocabularyBatch, getHighQualityAudio, GenerationTopic, generateCanadianNews } from './services/geminiService';
-import { loadVocabularyData, appendVocabulary, updateWordStatus, removeVocabularyWord, getRawDataForExport, importDataFromJson, loadNewsData, appendNewsData, deleteNewsArticle, editVocabularyWord, loadSettings, saveSettings, loadAllAudioFromDB, saveAudioSnippet, deleteAudioSnippet, resetToDefaults } from './services/storageService';
+import { loadVocabularyData, appendVocabulary, updateWordStatus, removeVocabularyWord, exportFullSystemBackup, importFullSystemBackup, loadNewsData, appendNewsData, deleteNewsArticle, editVocabularyWord, loadSettings, saveSettings, loadAllAudioFromDB, saveAudioSnippet, deleteAudioSnippet, resetToDefaults } from './services/storageService';
 import { Dashboard } from './components/Dashboard';
 import { StudyList } from './components/StudyList';
 import { Flashcard } from './components/Flashcard';
@@ -99,14 +99,67 @@ export default function App() {
 
   const handleResetContent = () => {
     if (!selectedLang) return;
-    if (confirm("DELETE ALL WORDS? This cannot be undone.")) {
+    if (confirm("DELETE ALL WORDS in current language? This cannot be undone.")) {
         const defaults = resetToDefaults(selectedLang);
         setVocab(defaults);
-        alert("Reset complete.");
+        alert("Reset complete for this language.");
     }
   }
 
-  // ... (Rest of handlers: StartNew, News, Edit, Delete, Export, Import - Keep existing) ...
+  // --- GLOBAL EXPORT / IMPORT HANDLERS ---
+  const handleExport = async () => {
+      try {
+          // Export EVERYTHING (Global Backup)
+          const data = await exportFullSystemBackup();
+          
+          const blob = new Blob([data], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          // Name the file 'duolingo_ai_full_backup' so user knows it's everything
+          a.download = `duolingo_ai_full_backup_${Date.now()}.json`;
+          a.click();
+      } catch (e) {
+          alert("Export failed: " + e);
+      }
+  }
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      
+      setLoading(true);
+      setLoadingMessage('Restoring Full Backup...');
+      
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+          try {
+              const content = ev.target?.result as string;
+              // Pass current selectedLang as fallback for legacy files
+              const result = await importFullSystemBackup(content, selectedLang || 'fr');
+              
+              if (result.success) {
+                  // If we are currently in a language view, refresh it to show new data immediately
+                  if (selectedLang) refreshData();
+                  
+                  if (result.audioCache) audioCache.current = result.audioCache;
+                  
+                  alert(result.message || "Restored successfully!");
+                  setIsSettingsOpen(false);
+              } else {
+                  alert(result.message || "Invalid file.");
+              }
+          } catch (err) {
+              alert("Error restoring.");
+          } finally {
+              setLoading(false);
+              setLoadingMessage('');
+          }
+      };
+      reader.readAsText(file);
+  }
+
+  // ... (Rest of handlers: StartNew, News, Edit, Delete... Keep existing) ...
   const handleStartNew = async (topic: GenerationTopic = 'general', count: number = 10, autoFetchAudio: boolean = false, autoFetchExampleAudio: boolean = false) => {
     if (!selectedLang) return; setLoading(true); setLoadingMessage(mode === AppMode.GENERATING ? 'AI is thinking...' : 'Generating Vocabulary...'); setError(null); setMode(AppMode.GENERATING); try { const existingWords = vocab.map(v => v.target); const generatedWords = await generateVocabularyBatch(existingWords, topic, selectedLang, count); const distinctNewWords = generatedWords.filter(nw => { const normalizedNew = nw.target.trim().toLowerCase(); return !vocab.some(existing => existing.target.trim().toLowerCase() === normalizedNew); }); if (distinctNewWords.length === 0) throw new Error("AI generated duplicates."); if (autoFetchAudio || autoFetchExampleAudio) { let completedOps = 0; const totalOps = (autoFetchAudio ? distinctNewWords.length : 0) + (autoFetchExampleAudio ? distinctNewWords.length : 0); setLoadingMessage(`Downloading Audio (0/${totalOps})...`); for (let i = 0; i < distinctNewWords.length; i++) { const word = distinctNewWords[i]; if (autoFetchAudio) { try { const cacheKey = word.target.trim(); if (!audioCache.current.has(cacheKey)) { completedOps++; setLoadingMessage(`Downloading Audio (${completedOps}/${totalOps})...`); const base64Wav = await getHighQualityAudio(word.target, selectedLang); const url = `data:audio/wav;base64,${base64Wav}`; audioCache.current.set(cacheKey, url); await saveAudioSnippet(cacheKey, url); await new Promise(r => setTimeout(r, 300)); } } catch (e) {} } if (autoFetchExampleAudio) { try { const exampleKey = word.example.target.trim(); if (!audioCache.current.has(exampleKey)) { completedOps++; setLoadingMessage(`Downloading Audio (${completedOps}/${totalOps})...`); const base64Wav = await getHighQualityAudio(word.example.target, selectedLang); const url = `data:audio/wav;base64,${base64Wav}`; audioCache.current.set(exampleKey, url); await saveAudioSnippet(exampleKey, url); await new Promise(r => setTimeout(r, 300)); } } catch (e) {} } } } const updatedVocab = appendVocabulary(distinctNewWords, selectedLang); setVocab(updatedVocab); setCurrentBatch(distinctNewWords); const t = TRANSLATIONS[selectedLang]; let title = t.newVocab; if (topic === 'common-verbs') title = t.commonVerbs; if (topic === 'irregular-verbs') title = t.irregularVerbs; setStudyListTitle(title); setMode(AppMode.STUDY_LIST); } catch (err: any) { console.error(err); setError(err.message || "Error generating words."); setMode(AppMode.DASHBOARD); } finally { setLoading(false); setLoadingMessage(''); } };
   const handleOpenNews = () => { setMode(AppMode.NEWS_READER); if (newsArticles.length === 0 && selectedLang) handleFetchMoreNews(); };
@@ -121,8 +174,6 @@ export default function App() {
   const handleViewList = () => { setInitialFilter('ALL'); setMode(AppMode.VOCAB_LIST); }
   const handleToggleMastered = (id: string, status: boolean) => { if (!selectedLang) return; const updates: Partial<VocabularyWord> = { mastered: status }; if (status === true) updates.isFavorite = false; const updated = updateWordStatus(id, updates, selectedLang); setVocab(updated); if (currentBatch.some(w => w.id === id)) setCurrentBatch(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w)); };
   const handleToggleFavorite = (id: string, status: boolean) => { if (!selectedLang) return; const updates: Partial<VocabularyWord> = { isFavorite: status }; if (status === true) updates.mastered = false; const updated = updateWordStatus(id, updates, selectedLang); setVocab(updated); if (currentBatch.some(w => w.id === id)) setCurrentBatch(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w)); };
-  const handleExport = async () => { if (!selectedLang) return; try { const data = await getRawDataForExport(selectedLang, audioCache.current); const blob = new Blob([data], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `full_backup_${selectedLang}_${Date.now()}.json`; a.click(); } catch (e) { alert("Export failed: " + e); } }
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file || !selectedLang) return; setLoading(true); setLoadingMessage('Restoring...'); const reader = new FileReader(); reader.onload = async (ev) => { try { const content = ev.target?.result as string; const result = await importDataFromJson(content, selectedLang); if (result.success) { refreshData(); if (result.audioCache) audioCache.current = result.audioCache; alert("Restored!"); setIsSettingsOpen(false); } else { alert("Invalid file."); } } catch (err) { alert("Error restoring."); } finally { setLoading(false); setLoadingMessage(''); } }; reader.readAsText(file); }
 
   if (!isAuthenticated) return <div className="h-[100dvh] bg-gray-100 flex flex-col items-center justify-center p-6 font-sans text-slate-700"><div className="w-full max-w-xs bg-white rounded-3xl shadow-2xl p-8 border-2 border-slate-200 text-center"><div className="bg-sky-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-sky-200"><Lock className="w-10 h-10 text-sky-500" /></div><h1 className="text-3xl font-black text-slate-700 mb-2">Duolingo AI</h1><p className="text-slate-400 font-bold mb-8 text-sm uppercase">Security Lock</p><form onSubmit={handleLogin} className="space-y-4"><div className="relative"><KeyRound className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-300 w-5 h-5" /><input type="password" inputMode="numeric" pattern="[0-9]*" value={passwordInput} onChange={(e) => { setAuthError(false); setPasswordInput(e.target.value); }} placeholder="Passcode" className={`w-full pl-12 pr-4 py-4 bg-slate-50 border-2 rounded-2xl outline-none font-black text-center text-2xl tracking-widest transition-all ${authError ? 'border-rose-300 text-rose-500 bg-rose-50' : 'border-slate-200 text-slate-700 focus:border-sky-500'}`} autoFocus /></div>{authError && <p className="text-xs font-bold text-rose-500 animate-pulse">Incorrect Passcode</p>}<button type="submit" className="w-full py-4 bg-sky-500 hover:bg-sky-400 text-white rounded-2xl font-extrabold uppercase tracking-wide border-b-4 border-sky-600 active:border-b-0 active:translate-y-1 transition-all shadow-lg shadow-sky-200">Unlock</button></form></div></div>;
 
@@ -159,7 +210,22 @@ export default function App() {
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between"><div className="flex items-center gap-3"><Sparkles className={`w-6 h-6 ${autoPlayExample ? 'text-purple-500' : 'text-slate-400'}`} /><div><p className="font-bold text-slate-700 text-sm">Play Examples</p><p className="text-xs text-slate-400 font-bold">Read sentence in Auto-Play</p></div></div><button onClick={() => setAutoPlayExample(!autoPlayExample)} className={`w-12 h-7 rounded-full relative transition-colors duration-300 ${autoPlayExample ? 'bg-purple-500' : 'bg-slate-300'}`}><div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-transform duration-300 shadow-sm ${autoPlayExample ? 'left-6' : 'left-1'}`}></div></button></div>
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100"><div className="flex justify-between items-center mb-2"><div className="flex items-center gap-2"><Clock className="w-5 h-5 text-indigo-500" /><p className="font-bold text-slate-600 text-sm">Auto-Play Delay</p></div><span className="text-xs font-black bg-white border px-2 py-1 rounded-lg text-slate-500">{autoPlayDelay / 1000}s</span></div><input type="range" min="1000" max="5000" step="500" value={autoPlayDelay} onChange={(e) => setAutoPlayDelay(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500" /><div className="flex justify-between text-[10px] font-bold text-slate-400 mt-1 uppercase"><span>1s (Fast)</span><span>5s (Slow)</span></div></div>
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between"><div className="flex items-center gap-3">{swipeAutoplay ? <Volume2 className="w-6 h-6 text-sky-500" /> : <VolumeX className="w-6 h-6 text-slate-400" />}<div><p className="font-bold text-slate-700 text-sm">Swipe Audio</p><p className="text-xs text-slate-400 font-bold">Auto-play when swiping</p></div></div><button onClick={() => setSwipeAutoplay(!swipeAutoplay)} className={`w-12 h-7 rounded-full relative transition-colors duration-300 ${swipeAutoplay ? 'bg-sky-500' : 'bg-slate-300'}`}><div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-transform duration-300 shadow-sm ${swipeAutoplay ? 'left-6' : 'left-1'}`}></div></button></div>
-                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100"><p className="font-bold text-slate-600 mb-2">Full Backup</p><div className="grid grid-cols-2 gap-3"><button onClick={handleExport} className="flex flex-col items-center justify-center p-3 bg-white border-2 border-slate-200 rounded-xl hover:bg-sky-50 active:scale-95"><Download className="w-6 h-6 text-sky-500 mb-1" /><span className="text-xs font-bold text-slate-500">Download</span></button><button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center justify-center p-3 bg-white border-2 border-slate-200 rounded-xl hover:bg-green-50 active:scale-95"><Upload className="w-6 h-6 text-green-500 mb-1" /><span className="text-xs font-bold text-slate-500">Restore</span></button><input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleImport} /></div></div>
+                      
+                      {/* GLOBAL BACKUP SECTION */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                          <p className="font-bold text-slate-600 mb-2">Global Backup (All Languages)</p>
+                          <div className="grid grid-cols-2 gap-3">
+                              <button onClick={handleExport} className="flex flex-col items-center justify-center p-3 bg-white border-2 border-slate-200 rounded-xl hover:bg-sky-50 active:scale-95">
+                                  <Download className="w-6 h-6 text-sky-500 mb-1" />
+                                  <span className="text-xs font-bold text-slate-500">Backup All</span>
+                              </button>
+                              <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center justify-center p-3 bg-white border-2 border-slate-200 rounded-xl hover:bg-green-50 active:scale-95">
+                                  <Upload className="w-6 h-6 text-green-500 mb-1" />
+                                  <span className="text-xs font-bold text-slate-500">Restore All</span>
+                              </button>
+                              <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleImport} />
+                          </div>
+                      </div>
                       
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mt-4">
                             <p className="font-bold text-slate-600 mb-2">Troubleshooting</p>
@@ -168,7 +234,7 @@ export default function App() {
                                     <RefreshCcw className="w-4 h-4" /> Repair Hidden Words
                                 </button>
                                 <button onClick={handleResetContent} className="w-full py-3 bg-rose-100 text-rose-500 rounded-xl font-bold border border-rose-200 hover:bg-rose-200 transition-all">
-                                    Factory Reset Content
+                                    Reset Language Content
                                 </button>
                             </div>
                       </div>

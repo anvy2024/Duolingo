@@ -5,6 +5,9 @@ const getStorageKey = (lang: Language) => `vocab_data_${lang}_v1`;
 const getNewsStorageKey = (lang: Language) => `news_data_${lang}_v1`;
 const SETTINGS_KEY = 'app_settings_v1';
 
+// Danh sách các ngôn ngữ hỗ trợ để quét khi backup
+export const SUPPORTED_LANGUAGES: Language[] = ['fr', 'en', 'zh', 'es'];
+
 const AUDIO_DB_NAME = 'DuolingoAI_AudioDB';
 const AUDIO_STORE_NAME = 'audio_snippets';
 const DB_VERSION = 1;
@@ -87,26 +90,26 @@ export interface AppSettings {
     autoPlayExample: boolean;
 }
 
-export interface FullBackup {
+// Cấu trúc backup toàn cục mới
+export interface FullSystemBackup {
     version: number;
-    lang: Language;
-    vocab: VocabularyWord[];
-    news: NewsArticle[];
-    audioCache: Record<string, string>;
-    settings: AppSettings;
+    type: 'GLOBAL_BACKUP';
     timestamp: number;
+    settings: AppSettings;
+    audioCache: Record<string, string>;
+    data: {
+        [key in Language]?: {
+            vocab: VocabularyWord[];
+            news: NewsArticle[];
+        }
+    };
 }
 
 // --- DATA FIXING LOGIC ---
 const fixWordData = (w: any, index: number): VocabularyWord => {
-    // 1. ID Fix
     const id = w.id || `repaired_id_${Date.now()}_${index}`;
-    
-    // 2. Content Fix (Fallback to 'Unknown' if completely missing to avoid invisible cards)
     let target = w.target || w.french || w.english || w.text || 'Unknown Word';
     let vietnamese = w.vietnamese || 'Chưa có nghĩa';
-    
-    // 3. Example Fix
     let example = w.example || {};
     let exTarget = example.target || example.french || example.english || example.text || target;
     let exViet = example.vietnamese || vietnamese;
@@ -129,14 +132,6 @@ const fixWordData = (w: any, index: number): VocabularyWord => {
     };
 };
 
-// --- INITIAL DATA (Shortened for brevity, use existing consts in logic) ---
-// ... (Assume INITIAL_DATA_* consts exist as in previous file) ...
-// Helper to get defaults
-const getInitialDataForLang = (lang: Language): VocabularyWord[] => {
-    // Return empty array if no hardcoded defaults to force clean start or load logic
-    return []; 
-}
-
 export const saveVocabularyData = (words: VocabularyWord[], lang: Language): void => {
     try { localStorage.setItem(getStorageKey(lang), JSON.stringify(words)); } catch (e) { console.error(e); }
 };
@@ -145,29 +140,20 @@ export const loadVocabularyData = (lang: Language): VocabularyWord[] => {
     try {
         const key = getStorageKey(lang);
         let jsonString = localStorage.getItem(key);
-        
-        // MIGRATION: Check old key if new key is empty
         if (!jsonString || jsonString === '[]') {
             if (lang === 'fr') {
                 const oldData = localStorage.getItem('french_vocab_a1_data_json');
                 if (oldData && oldData !== '[]') jsonString = oldData;
             }
         }
-
         if (!jsonString) return [];
-
         let parsed: any[] = JSON.parse(jsonString);
         if (!Array.isArray(parsed)) return [];
-
-        // FORCE REPAIR ON LOAD
         const repairedData = parsed.map((w, i) => fixWordData(w, i));
-        
-        // Auto-save if we fixed anything (ids were missing)
         const needsSave = repairedData.some((w, i) => !parsed[i].id || !parsed[i].target);
         if (needsSave) {
             saveVocabularyData(repairedData, lang);
         }
-
         return repairedData;
     } catch (error) {
         console.error("Failed load", error);
@@ -176,8 +162,6 @@ export const loadVocabularyData = (lang: Language): VocabularyWord[] => {
 };
 
 export const resetToDefaults = (lang: Language): VocabularyWord[] => {
-    const defaults = getInitialDataForLang(lang); 
-    // Actually, let's just empty it or put 1 demo word if needed, but user asked for fix, not wipe
     saveVocabularyData([], lang);
     return [];
 }
@@ -211,7 +195,7 @@ export const removeVocabularyWord = (id: string, lang: Language): VocabularyWord
     return updated;
 }
 
-// --- NEWS & SETTINGS (Keep existing logic) ---
+// --- NEWS & SETTINGS ---
 export const loadNewsData = (lang: Language): NewsArticle[] => {
     try { return JSON.parse(localStorage.getItem(getNewsStorageKey(lang)) || '[]'); } catch (e) { return []; }
 };
@@ -234,25 +218,96 @@ export const loadSettings = (): AppSettings => {
     catch (e) { return { fontSize: 'normal', playbackSpeed: 1.0, swipeAutoplay: true, loopAudio: false, autoPlayDelay: 2000, autoPlayExample: true }; }
 };
 
-export const getRawDataForExport = async (lang: Language, currentAudioCache?: Map<string, string>): Promise<string> => {
+// --- GLOBAL EXPORT / IMPORT FUNCTIONS ---
+
+// 1. Xuất toàn bộ dữ liệu (Global Backup)
+export const exportFullSystemBackup = async (): Promise<string> => {
     let audioCacheMap = new Map<string, string>();
-    try { audioCacheMap = await loadAllAudioFromDB(); } catch(e) { if (currentAudioCache) audioCacheMap = currentAudioCache; }
-    return JSON.stringify({ version: 2, lang, vocab: loadVocabularyData(lang), news: loadNewsData(lang), audioCache: Object.fromEntries(audioCacheMap), settings: loadSettings(), timestamp: Date.now() });
+    try { audioCacheMap = await loadAllAudioFromDB(); } catch(e) {}
+    
+    // Gom dữ liệu từ tất cả ngôn ngữ
+    const allData: any = {};
+    
+    SUPPORTED_LANGUAGES.forEach(lang => {
+        allData[lang] = {
+            vocab: loadVocabularyData(lang), // Tải và sửa lỗi luôn
+            news: loadNewsData(lang)
+        };
+    });
+
+    const backup: FullSystemBackup = {
+        version: 3,
+        type: 'GLOBAL_BACKUP',
+        timestamp: Date.now(),
+        settings: loadSettings(),
+        audioCache: Object.fromEntries(audioCacheMap),
+        data: allData
+    };
+
+    return JSON.stringify(backup);
 };
 
+// 2. Nhập dữ liệu (Smart Import)
+export const importFullSystemBackup = async (json: string, currentFallbackLang: Language): Promise<{ success: boolean, audioCache?: Map<string, string>, message?: string }> => {
+    try {
+        const parsed = JSON.parse(json);
+        
+        // CASE A: GLOBAL BACKUP (File mới)
+        if (parsed.type === 'GLOBAL_BACKUP' || (parsed.version >= 3 && parsed.data)) {
+            // Khôi phục Cài đặt
+            if (parsed.settings) saveSettings(parsed.settings);
+            
+            // Khôi phục dữ liệu từng ngôn ngữ
+            const languagesFound = Object.keys(parsed.data) as Language[];
+            languagesFound.forEach(lang => {
+                if (parsed.data[lang]) {
+                    const vocab = parsed.data[lang].vocab || [];
+                    const news = parsed.data[lang].news || [];
+                    
+                    // Sửa lỗi dữ liệu trước khi lưu
+                    const fixedVocab = vocab.map((w: any, i: number) => fixWordData(w, i));
+                    
+                    // Gộp dữ liệu (Append Unique)
+                    appendVocabulary(fixedVocab, lang);
+                    appendNewsData(news, lang);
+                }
+            });
+
+            // Khôi phục Audio Cache
+            let cache = undefined;
+            if (parsed.audioCache) {
+                 cache = new Map(Object.entries(parsed.audioCache));
+                 saveBatchAudioToDB(Object.entries(parsed.audioCache) as [string,string][]);
+            }
+            
+            return { success: true, audioCache: cache as Map<string, string>, message: `Restored data for: ${languagesFound.join(', ').toUpperCase()}` };
+        } 
+        
+        // CASE B: LEGACY BACKUP (File cũ chỉ có 1 ngôn ngữ)
+        else if (parsed.vocab || Array.isArray(parsed)) {
+             // Dùng hàm importDataFromJson cũ, nhưng wrap lại ở đây cho gọn
+             const result = await importDataFromJson(json, currentFallbackLang);
+             return { ...result, message: `Legacy backup restored to ${currentFallbackLang.toUpperCase()}` };
+        }
+        
+        return { success: false, message: "Unknown file format" };
+    } catch (e) { 
+        console.error(e);
+        return { success: false, message: "Invalid JSON file" }; 
+    }
+};
+
+// Legacy import helper (kept for internal use by case B above)
 export const importDataFromJson = async (json: string, lang: Language): Promise<{ success: boolean, audioCache?: Map<string, string> }> => {
     try {
         const parsed = JSON.parse(json);
-        // ... (Simplified import logic, essentially merge vocab) ...
         if (parsed.vocab || Array.isArray(parsed)) {
              const words = parsed.vocab || parsed;
-             // Fix words on import too
              const fixedWords = words.map((w: any, i: number) => fixWordData(w, i));
-             const merged = appendVocabulary(fixedWords, lang);
+             appendVocabulary(fixedWords, lang);
              
              if (parsed.audioCache) {
                  const cache = new Map(Object.entries(parsed.audioCache));
-                 // Async background save
                  saveBatchAudioToDB(Object.entries(parsed.audioCache) as [string,string][]);
                  return { success: true, audioCache: cache as Map<string, string> };
              }
