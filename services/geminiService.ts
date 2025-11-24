@@ -79,8 +79,8 @@ export const generateVocabularyBatch = async (
           // STRICT INSTRUCTION FOR CHINESE
           ipaInstruction = "3. CRITICAL: Provide Pinyin with tone marks in the 'ipa' field (e.g., nǐ hǎo).";
           pronunciationInstruction = '4. Provide "Vietnamese Pronunciation Guide" (Bồi) in viet_pronunciation.';
-          // Instruct to pack both Pinyin and Bồi into the sentence pronunciation field
-          sentencePronunciationInstruction = '7. CRITICAL for Sentence Pronunciation: Provide Pinyin first, then " || ", then Vietnamese Bồi. Example: "Wǒ ài nǐ || Ủa ai ni".';
+          // Instruct to provide Pinyin for the sentence to help learners master tones
+          sentencePronunciationInstruction = '7. CRITICAL for Sentence Pronunciation: Provide Pinyin (with tone marks) for the example sentence. Example: "Wǒ ài nǐ".';
       }
 
       // Specific Topic Instruction
@@ -229,7 +229,7 @@ export const generateSingleWordDetails = async (word: string, lang: Language): P
     }
     if (lang === 'zh') {
         pronunciationPrompt = 'CRITICAL: Provide Pinyin in IPA field. Provide Viet Bồi in viet_pronunciation.';
-        examplePronunPrompt = 'CRITICAL: For example viet_pronunciation, provide "Pinyin || Viet Bồi" (separated by ||).';
+        examplePronunPrompt = 'CRITICAL: For example viet_pronunciation, provide Pinyin (with tone marks).';
     }
 
     const prompt = `
@@ -377,7 +377,7 @@ export const generateLookupDetail = async (text: string, lang: Language): Promis
         pronunciationPrompt = 'Return EMPTY STRING for viet_pronunciation.'; 
     } else if (lang === 'zh') { 
         targetLang = 'Chinese'; 
-        pronunciationPrompt = 'Provide Pinyin in IPA field. Provide Viet Bồi in viet_pronunciation.'; 
+        pronunciationPrompt = 'Provide Pinyin in IPA field. Provide Viet Bồi in viet_pronunciation. For example sentence pronunciation, provide Pinyin (with tone marks).'; 
     } else if (lang === 'es') { 
         targetLang = 'Spanish'; 
     }

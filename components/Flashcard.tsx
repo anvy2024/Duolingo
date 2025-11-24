@@ -98,7 +98,7 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
       const textColor = isFront ? 'text-slate-400' : 'text-slate-500';
       const boiColor = isFront ? 'text-orange-400' : 'text-orange-500';
 
-      // Check for separator '||' used in Gemini prompt for Chinese
+      // Check for separator '||' used in Gemini prompt for Chinese (legacy)
       if (word.example.viet_pronunciation.includes('||')) {
           const parts = word.example.viet_pronunciation.split('||');
           return (
@@ -109,9 +109,9 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
           );
       }
       
-      // If language is Chinese but no separator, show it prominently if requested
+      // If language is Chinese but no separator, assume Pinyin for new data
       if (currentLang === 'zh') {
-           return <p className={`italic text-xs mt-1 ${boiColor}`}>{word.example.viet_pronunciation}</p>;
+           return <p className={`italic text-sm mt-1 text-indigo-500 font-medium font-sans`}>{word.example.viet_pronunciation}</p>;
       }
       
       return <p className={`italic text-xs mb-3 ${textColor}`}>{word.example.viet_pronunciation}</p>;

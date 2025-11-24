@@ -200,7 +200,7 @@ const INITIAL_DATA_ZH: VocabularyWord[] = [
       "example": {
         "target": "你好，你叫什么名字？",
         "vietnamese": "Xin chào, bạn tên là gì?",
-        "viet_pronunciation": "Ni hảo, ni cheo sấn mơ mính chự?"
+        "viet_pronunciation": "Nǐ hǎo, nǐ jiào shénme míngzì?" // Updated to Pinyin
       },
       "category": "general",
       "mastered": false,
@@ -216,7 +216,7 @@ const INITIAL_DATA_ZH: VocabularyWord[] = [
       "example": {
         "target": "谢谢你的帮助。",
         "vietnamese": "Cảm ơn sự giúp đỡ của bạn.",
-        "viet_pronunciation": "Xia xia ni tơ bang chu."
+        "viet_pronunciation": "Xièxiè nǐ de bāngzhù." // Updated to Pinyin
       },
       "category": "general",
       "mastered": false,
