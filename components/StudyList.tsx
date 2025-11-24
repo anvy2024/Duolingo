@@ -22,12 +22,17 @@ interface StudyListProps {
   fontSize?: FontSize;
   loopAudio: boolean;
   onToggleLoop: () => void;
+  autoPlayDelay?: number;
+  onUpdateDelay?: (ms: number) => void;
+  autoPlayExample: boolean;
+  onToggleAutoPlayExample: () => void;
 }
 
 export const StudyList: React.FC<StudyListProps> = ({ 
     words, title, onComplete, onBackToHome, speakFast, speakAI, speakBestAvailable, aiLoading, currentLang,
     onToggleMastered, onToggleFavorite, playbackSpeed = 1.0, swipeAutoplay,
-    fontSize = 'normal', loopAudio, onToggleLoop
+    fontSize = 'normal', loopAudio, onToggleLoop, autoPlayDelay = 2000, onUpdateDelay,
+    autoPlayExample, onToggleAutoPlayExample
 }) => {
   const t = TRANSLATIONS[currentLang];
 
@@ -35,7 +40,7 @@ export const StudyList: React.FC<StudyListProps> = ({
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [playDelay, setPlayDelay] = useState(2000); // Default 2s
+  // Replaced local playDelay state with prop usage
   const [showSettings, setShowSettings] = useState(false);
   
   // --- SWIPE ANIMATION STATE ---
@@ -218,19 +223,31 @@ export const StudyList: React.FC<StudyListProps> = ({
                      stopAutoPlay();
                  }
              }
-        }, playDelay);
+        }, autoPlayDelay);
     };
 
     const initialDelay = setTimeout(() => {
-         // Use Best Available (Cached AI or Fast)
-         speakBestAvailable(word.target, playNext);
+         // 1. Speak Word
+         speakBestAvailable(word.target, () => {
+             // Word Finished. Check Example setting.
+             if (autoPlayExample && word.example && word.example.target) {
+                 // 2. Wait slightly then speak Example
+                 setTimeout(() => {
+                    if (!isMountedRef.current || !isAutoPlaying || isPaused) return;
+                    speakBestAvailable(word.example.target, playNext);
+                 }, 500); 
+             } else {
+                 // 3. Skip Example, Next
+                 playNext();
+             }
+         });
     }, 500);
 
     return () => {
         clearTimeout(initialDelay);
         if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
     };
-  }, [currentIndex, isAutoPlaying, isPaused, words, speakBestAvailable, playDelay, loopAudio]);
+  }, [currentIndex, isAutoPlaying, isPaused, words, speakBestAvailable, autoPlayDelay, loopAudio, autoPlayExample]);
 
 
   const currentWord = words[currentIndex];
@@ -312,12 +329,12 @@ export const StudyList: React.FC<StudyListProps> = ({
 
       {/* Auto Play Settings Dropdown */}
       {isAutoPlaying && showSettings && (
-          <div className="absolute top-[72px] right-4 w-56 bg-white rounded-xl shadow-xl border-2 border-slate-100 p-4 z-30 animate-in slide-in-from-top-2 space-y-4">
+          <div className="absolute top-[72px] right-4 w-60 bg-white rounded-xl shadow-xl border-2 border-slate-100 p-4 z-30 animate-in slide-in-from-top-2 space-y-4">
               {/* Delay Slider */}
               <div>
                   <div className="flex justify-between items-center mb-2">
                       <span className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
-                          <Clock className="w-3 h-3" /> {t.delay}: {playDelay/1000}s
+                          <Clock className="w-3 h-3" /> {t.delay}: {autoPlayDelay / 1000}s
                       </span>
                   </div>
                   <input 
@@ -325,11 +342,28 @@ export const StudyList: React.FC<StudyListProps> = ({
                       min="1000" 
                       max="5000" 
                       step="500"
-                      value={playDelay}
-                      onChange={(e) => setPlayDelay(Number(e.target.value))}
+                      value={autoPlayDelay}
+                      onChange={(e) => onUpdateDelay && onUpdateDelay(Number(e.target.value))}
                       className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
                   />
+                  <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-bold">
+                       <span>1s</span>
+                       <span>5s</span>
+                   </div>
               </div>
+
+               {/* Example Toggle */}
+               <div className="flex justify-between items-center border-t border-slate-100 pt-3">
+                    <span className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-purple-500" /> Play Examples
+                    </span>
+                    <button 
+                        onClick={onToggleAutoPlayExample}
+                        className={`w-10 h-6 rounded-full relative transition-colors duration-300 ${autoPlayExample ? 'bg-purple-500' : 'bg-slate-300'}`}
+                    >
+                        <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform duration-300 shadow-sm ${autoPlayExample ? 'left-5' : 'left-1'}`}></div>
+                    </button>
+               </div>
           </div>
       )}
 
