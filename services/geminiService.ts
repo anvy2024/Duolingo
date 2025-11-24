@@ -68,7 +68,7 @@ export const generateVocabularyBatch = async (
       console.log(`Loop ${loopCount}: Need ${remainingNeeded} more. Asking AI for ${effectiveRequestSize} candidates...`);
 
       // Logic for Pronunciation format
-      let pronunciationInstruction = '4. Provide "Vietnamese Pronunciation Guide" (Phiên âm bồi).';
+      let pronunciationInstruction = '4. Provide "Vietnamese Pronunciation Guide" (Phiên âm bồi) for the word.';
       let sentencePronunciationInstruction = '7. Vietnamese pronunciation for the sentence.';
       let ipaInstruction = "3. Provide IPA.";
 
@@ -76,8 +76,11 @@ export const generateVocabularyBatch = async (
           pronunciationInstruction = '4. For "viet_pronunciation", return an EMPTY STRING.';
           sentencePronunciationInstruction = '7. For sentence pronunciation, return an EMPTY STRING.';
       } else if (lang === 'zh') {
-          ipaInstruction = "3. Provide Pinyin with tone marks in the 'ipa' field (e.g., nǐ hǎo).";
+          // STRICT INSTRUCTION FOR CHINESE
+          ipaInstruction = "3. CRITICAL: Provide Pinyin with tone marks in the 'ipa' field (e.g., nǐ hǎo).";
           pronunciationInstruction = '4. Provide "Vietnamese Pronunciation Guide" (Bồi) in viet_pronunciation.';
+          // Instruct to pack both Pinyin and Bồi into the sentence pronunciation field
+          sentencePronunciationInstruction = '7. CRITICAL for Sentence Pronunciation: Provide Pinyin first, then " || ", then Vietnamese Bồi. Example: "Wǒ ài nǐ || Ủa ai ni".';
       }
 
       // Specific Topic Instruction
@@ -218,13 +221,22 @@ export const generateSingleWordDetails = async (word: string, lang: Language): P
     else if (lang === 'es') { targetLang = 'Spanish'; level = 'A1'; }
 
     let pronunciationPrompt = 'Provide Vietnamese Pronunciation (Bồi).';
-    if (lang === 'en') pronunciationPrompt = 'Return EMPTY STRING for viet_pronunciation.';
-    if (lang === 'zh') pronunciationPrompt = 'Provide Pinyin in IPA field. Provide Viet Bồi in viet_pronunciation.';
+    let examplePronunPrompt = 'Provide Vietnamese Pronunciation for the sentence.';
+    
+    if (lang === 'en') {
+        pronunciationPrompt = 'Return EMPTY STRING for viet_pronunciation.';
+        examplePronunPrompt = 'Return EMPTY STRING for example pronunciation.';
+    }
+    if (lang === 'zh') {
+        pronunciationPrompt = 'CRITICAL: Provide Pinyin in IPA field. Provide Viet Bồi in viet_pronunciation.';
+        examplePronunPrompt = 'CRITICAL: For example viet_pronunciation, provide "Pinyin || Viet Bồi" (separated by ||).';
+    }
 
     const prompt = `
       I have a ${targetLang} word: "${word}".
       Please provide details for a Level ${level} student.
       ${pronunciationPrompt}
+      ${examplePronunPrompt}
       Return valid JSON.
     `;
 

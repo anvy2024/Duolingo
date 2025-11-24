@@ -77,7 +77,9 @@ export const TRANSLATIONS = {
         filterFav: "Favoris",
         filterMastered: "Maîtrisés",
         filterVerbs: "Verbes",
-        loop: "En boucle"
+        loop: "En boucle",
+        newest: "Plus récents",
+        oldest: "Plus anciens"
     },
     en: {
         dashboard: "Dashboard",
@@ -156,7 +158,9 @@ export const TRANSLATIONS = {
         filterFav: "Favorites",
         filterMastered: "Mastered",
         filterVerbs: "Verbs",
-        loop: "Loop"
+        loop: "Loop",
+        newest: "Newest",
+        oldest: "Oldest"
     },
     zh: {
         dashboard: "仪表板 (Bảng tin)",
@@ -235,7 +239,9 @@ export const TRANSLATIONS = {
         filterFav: "Yêu thích",
         filterMastered: "Đã thuộc",
         filterVerbs: "Động từ",
-        loop: "Lặp lại"
+        loop: "Lặp lại",
+        newest: "Mới nhất",
+        oldest: "Cũ nhất"
     },
     es: {
         dashboard: "Tablero (Bảng tin)",
@@ -314,6 +320,8 @@ export const TRANSLATIONS = {
         filterFav: "Yêu thích",
         filterMastered: "Đã thuộc",
         filterVerbs: "Động từ",
-        loop: "Lặp lại"
+        loop: "Lặp lại",
+        newest: "Mới nhất",
+        oldest: "Cũ nhất"
     }
 };

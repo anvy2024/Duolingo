@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { VocabularyWord, Language } from '../types';
 import { Volume2, CheckCircle, Circle, Zap, Loader2, Heart, Radio, Sparkles } from 'lucide-react';
 import { FontSize } from '../App';
@@ -18,21 +18,46 @@ interface FlashcardProps {
 
 export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, speakBestAvailable, aiLoading, onToggleMastered, onToggleFavorite, isViewMode = false, currentLang = 'fr', fontSize = 'normal' }) => {
   const [isFlipped, setIsFlipped] = useState(false);
+  const isMountedRef = useRef(false);
   
   // Reset flip when word changes
   useEffect(() => {
     setIsFlipped(false);
+    isMountedRef.current = false; 
+    const t = setTimeout(() => { isMountedRef.current = true; }, 500);
+    return () => clearTimeout(t);
   }, [word.id]);
 
-  // Auto-play example on flip (Back side)
+  // Audio logic on flip
   useEffect(() => {
-    if (isFlipped && speakBestAvailable) {
-        const timer = setTimeout(() => {
-            speakBestAvailable(word.example.target);
-        }, 300);
-        return () => clearTimeout(timer);
+    if (speakBestAvailable && isMountedRef.current) {
+        if (isFlipped) {
+            // Front -> Back: Play Example
+            const timer = setTimeout(() => {
+                speakBestAvailable(word.example.target);
+            }, 300);
+            return () => clearTimeout(timer);
+        } else {
+            // Back -> Front: Play Target Word
+            const timer = setTimeout(() => {
+                speakBestAvailable(word.target);
+            }, 300);
+            return () => clearTimeout(timer);
+        }
     }
-  }, [isFlipped, speakBestAvailable, word.example.target]);
+  }, [isFlipped, speakBestAvailable, word.example.target, word.target]);
+
+  // Keyboard Shortcut: Arrow Up to Flip
+  useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+          if (e.key === 'ArrowUp') {
+              e.preventDefault(); // Prevent scrolling
+              setIsFlipped(prev => !prev);
+          }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleCardClick = (e: React.MouseEvent) => {
     // Prevent flip if clicking specific buttons
@@ -66,24 +91,47 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
   const isPhraseMode = word.target.length > 50 || (word.target === word.example.target);
   const displayTarget = word.target;
 
+  // Helper to parse Example Pronunciation (ZH handles separate Pinyin/Bồi)
+  const getExamplePronunciation = (isFront: boolean = false) => {
+      if (!word.example.viet_pronunciation) return null;
+      
+      const textColor = isFront ? 'text-slate-400' : 'text-slate-500';
+      const boiColor = isFront ? 'text-orange-400' : 'text-orange-500';
+
+      // Check for separator '||' used in Gemini prompt for Chinese
+      if (word.example.viet_pronunciation.includes('||')) {
+          const parts = word.example.viet_pronunciation.split('||');
+          return (
+              <div className="flex flex-col gap-0.5 mt-1 text-center">
+                  <span className={`text-xs font-mono ${textColor}`}>{parts[0].trim()}</span>
+                  <span className={`text-xs italic ${boiColor}`}>{parts[1].trim()}</span>
+              </div>
+          );
+      }
+      
+      // If language is Chinese but no separator, show it prominently if requested
+      if (currentLang === 'zh') {
+           return <p className={`italic text-xs mt-1 ${boiColor}`}>{word.example.viet_pronunciation}</p>;
+      }
+      
+      return <p className={`italic text-xs mb-3 ${textColor}`}>{word.example.viet_pronunciation}</p>;
+  };
+
   // Dynamic Font Size Logic
   const getFontSize = (text: string) => {
       const len = text.length;
-      // Huge Mode
       if (fontSize === 'huge') {
            if (len > 80) return 'text-2xl leading-normal text-left';
            if (len > 40) return 'text-3xl leading-tight font-bold';
            if (len > 15) return 'text-5xl font-extrabold';
            return 'text-6xl font-black'; 
       }
-      // Large Mode
       if (fontSize === 'large') {
            if (len > 80) return 'text-xl leading-normal text-left';
            if (len > 40) return 'text-3xl leading-tight font-bold';
            if (len > 15) return 'text-4xl font-extrabold';
            return 'text-5xl font-black';
       }
-      // Normal Mode
       if (len > 80) return 'text-xl leading-normal text-left';
       if (len > 40) return 'text-2xl leading-tight font-bold';
       if (len > 15) return 'text-3xl font-extrabold';
@@ -146,13 +194,27 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
           </div>
 
           {/* Center: Main Word */}
-          <div className="flex-1 flex flex-col items-center justify-center text-center gap-6 my-2 overflow-y-auto custom-scrollbar">
+          <div className="flex-1 flex flex-col items-center justify-center text-center gap-4 my-2 overflow-y-auto custom-scrollbar">
             <div className={`${getFontSize(displayTarget)} text-slate-800 break-words w-full px-2`}>
                 {displayTarget}
             </div>
             
+            {/* Pronunciation Display on Front */}
+            <div className="flex flex-col items-center gap-1">
+                {word.ipa && (
+                    <span className="font-mono text-slate-400 text-sm font-medium bg-slate-50 px-2 py-0.5 rounded">
+                        {word.ipa}
+                    </span>
+                )}
+                {word.viet_pronunciation && (
+                    <span className="text-orange-500 text-sm font-bold italic">
+                        {word.viet_pronunciation}
+                    </span>
+                )}
+            </div>
+            
             {/* Main Word Audio Buttons */}
-            <div className="flex items-center gap-4 shrink-0">
+            <div className="flex items-center gap-4 shrink-0 mt-2">
                 <button 
                     onClick={(e) => handleAudioClick(e, 'fast', displayTarget)}
                     className="w-12 h-12 flex items-center justify-center rounded-2xl bg-slate-100 text-slate-500 hover:bg-sky-100 hover:text-sky-600 transition-colors active:scale-95"
@@ -174,11 +236,15 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
           {/* Bottom: Example Sentence (Front) */}
           {!isPhraseMode && (
               <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 shrink-0" onClick={(e) => e.stopPropagation()}>
-                   <p className={`text-slate-600 text-center italic mb-3 line-clamp-3 ${getExampleSize()}`}>
+                   <p className={`text-slate-600 text-center italic mb-2 line-clamp-3 ${getExampleSize()}`}>
                        "{word.example.target}"
                    </p>
+                   
+                   {/* SHOW PRONUNCIATION ON FRONT FOR CHINESE */}
+                   {currentLang === 'zh' && getExamplePronunciation(true)}
+
                    {/* RESTORED AUDIO BUTTONS FOR EXAMPLE */}
-                   <div className="flex justify-center gap-3">
+                   <div className="flex justify-center gap-3 mt-2">
                         <button 
                             onClick={(e) => handleAudioClick(e, 'fast', word.example.target)}
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-xs font-bold text-slate-500 hover:border-sky-200 hover:text-sky-500 transition-all shadow-sm active:scale-95"
@@ -226,9 +292,10 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, speakFast, speakAI, 
                  <div className="bg-sky-50 p-4 rounded-2xl border border-sky-100 shrink-0">
                       <span className="text-[10px] font-black text-sky-400 uppercase mb-2 block">Ví dụ chi tiết</span>
                       <p className={`text-slate-700 mb-1 ${getBackExampleTargetSize()}`}>{word.example.target}</p>
-                      {word.example.viet_pronunciation && (
-                          <p className="text-slate-400 italic text-xs mb-3">{word.example.viet_pronunciation}</p>
-                      )}
+                      
+                      {/* Handle detailed pronunciation for Chinese examples */}
+                      {getExamplePronunciation(false)}
+
                       <div className="h-px bg-sky-200 w-full my-2"></div>
                       <p className={`text-slate-600 font-medium italic ${fontSize === 'huge' ? 'text-lg' : 'text-base'}`}>"{word.example.vietnamese}"</p>
                       
