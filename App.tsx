@@ -135,8 +135,8 @@ export default function App() {
       reader.onload = async (ev) => {
           try {
               const content = ev.target?.result as string;
-              // Pass current selectedLang as fallback for legacy files
-              const result = await importFullSystemBackup(content, selectedLang || 'fr');
+              // Now we don't need a fallback lang for Global Backup
+              const result = await importFullSystemBackup(content);
               
               if (result.success) {
                   // If we are currently in a language view, refresh it to show new data immediately
@@ -147,7 +147,7 @@ export default function App() {
                   alert(result.message || "Restored successfully!");
                   setIsSettingsOpen(false);
               } else {
-                  alert(result.message || "Invalid file.");
+                  alert(result.message || "Invalid or legacy file format.");
               }
           } catch (err) {
               alert("Error restoring.");
