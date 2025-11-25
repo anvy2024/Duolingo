@@ -90,7 +90,6 @@ export interface AppSettings {
     loopAudio: boolean;
     autoPlayDelay: number;
     autoPlayExample: boolean;
-    // GitHub Settings
     githubUrl: string;
     githubToken: string;
 }
@@ -129,28 +128,35 @@ export interface FullSystemBackup {
 
 // --- GITHUB SYNC FUNCTIONS ---
 
-// Helper: Safe Base64 Encode (Unicode support for VN/CN/ES characters)
 const utf8_to_b64 = (str: string) => {
-  return window.btoa(unescape(encodeURIComponent(str)));
+  try {
+    return window.btoa(unescape(encodeURIComponent(str)));
+  } catch (e) {
+    console.error("Encoding error:", e);
+    throw new Error("Cannot encode data. File too large or invalid characters.");
+  }
 }
 
 // 1. Load from GitHub (Using Raw URL)
 export const loadFromGitHub = async (rawUrl: string): Promise<string> => {
-    // Add timestamp to prevent caching from GitHub Raw
     const cacheBuster = `?t=${Date.now()}`;
-    const response = await fetch(rawUrl + cacheBuster);
-    
-    if (!response.ok) {
-        throw new Error(`GitHub Load Failed: ${response.status}`);
+    try {
+        const response = await fetch(rawUrl + cacheBuster);
+        if (!response.ok) {
+            throw new Error(`GitHub Load Error (${response.status}): ${response.statusText}`);
+        }
+        return await response.text();
+    } catch (e: any) {
+        throw new Error("Network Error: " + e.message);
     }
-    return await response.text();
 };
 
 // 2. Save to GitHub (Using API)
 export const saveToGitHub = async (rawUrl: string, token: string, content: string): Promise<void> => {
-    // Parse info from raw URL: https://raw.githubusercontent.com/USER/REPO/BRANCH/PATH
+    // Parse URL to get Owner, Repo, Path, Branch
+    // Format: https://raw.githubusercontent.com/:owner/:repo/:branch/:path
     const regex = /raw\.githubusercontent\.com\/([^\/]+)\/([^\/]+)\/([^\/]+)\/(.+)/;
-    const match = rawUrl.match(regex);
+    const match = rawUrl.trim().match(regex);
     
     if (!match) {
         throw new Error("Invalid GitHub Raw URL format. Must be raw.githubusercontent.com/USER/REPO/BRANCH/PATH");
@@ -163,46 +169,65 @@ export const saveToGitHub = async (rawUrl: string, token: string, content: strin
     
     const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
 
-    // 1. GET current file SHA (needed for update)
+    // Set Auth Header - 'token' prefix is standard for classic PATs starting with ghp_
+    const cleanToken = token.trim();
+    const authHeader = cleanToken.startsWith('ghp_') ? `token ${cleanToken}` : `Bearer ${cleanToken}`;
+
+    // Step A: Get SHA of existing file (Required for Update)
     let sha = "";
     try {
         const getRes = await fetch(apiUrl + `?ref=${branch}`, {
             headers: {
-                'Authorization': `Bearer ${token}`,
+                'Authorization': authHeader,
                 'Accept': 'application/vnd.github.v3+json'
             }
         });
+        
+        if (getRes.status === 401) {
+            throw new Error("INVALID TOKEN: Access denied (401). Please generate a new GitHub Token with 'repo' scope.");
+        }
+        
         if (getRes.ok) {
             const data = await getRes.json();
             sha = data.sha;
         } else if (getRes.status !== 404) {
-             throw new Error("Failed to check file existence on GitHub.");
+            // 404 is fine (file doesn't exist yet), anything else is an error
+            const errText = await getRes.text();
+            throw new Error(`GitHub Error (${getRes.status}): ${errText}`);
         }
-    } catch (e) {
-        console.warn("File likely doesn't exist yet, creating new.");
+    } catch (e: any) {
+        throw new Error(e.message || "Failed to connect to GitHub API.");
     }
 
-    // 2. PUT (Create/Update)
+    // Step B: Create/Update File
     const body = {
         message: `Update via Duolingo AI (${new Date().toLocaleString()})`,
-        content: utf8_to_b64(content), // Base64 encode content
+        content: utf8_to_b64(content),
         branch: branch,
-        ...(sha ? { sha } : {}) // Include SHA if updating
+        ...(sha ? { sha } : {})
     };
 
-    const putRes = await fetch(apiUrl, {
-        method: 'PUT',
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body)
-    });
+    try {
+        const putRes = await fetch(apiUrl, {
+            method: 'PUT',
+            headers: {
+                'Authorization': authHeader,
+                'Accept': 'application/vnd.github.v3+json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
 
-    if (!putRes.ok) {
-        const err = await putRes.json();
-        throw new Error(`GitHub Save Failed: ${err.message}`);
+        if (!putRes.ok) {
+            const err = await putRes.json().catch(() => ({}));
+            const errMsg = err.message || putRes.statusText;
+            if (putRes.status === 409) throw new Error("Conflict (409). File changed remotely. Try Pulling first.");
+            if (putRes.status === 422) throw new Error("Unprocessable (422). File might be too large or invalid.");
+            if (putRes.status === 401) throw new Error("Unauthorized (401). Token invalid.");
+            throw new Error(`Upload Failed (${putRes.status}): ${errMsg}`);
+        }
+    } catch (e: any) {
+        throw new Error(e.message || "Network error during upload.");
     }
 };
 
