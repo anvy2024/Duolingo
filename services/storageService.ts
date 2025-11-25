@@ -5,7 +5,6 @@ const getStorageKey = (lang: Language) => `vocab_data_${lang}_v1`;
 const getNewsStorageKey = (lang: Language) => `news_data_${lang}_v1`;
 const SETTINGS_KEY = 'app_settings_v1';
 
-// CHÍNH XÁC: Danh sách các ngôn ngữ được hỗ trợ để phân loại khi Backup/Restore
 export const SUPPORTED_LANGUAGES: Language[] = ['fr', 'en', 'zh', 'es'];
 
 const AUDIO_DB_NAME = 'DuolingoAI_AudioDB';
@@ -59,6 +58,7 @@ export const loadAllAudioFromDB = async (): Promise<Map<string, string>> => {
             const tx = db.transaction(AUDIO_STORE_NAME, 'readonly');
             const store = tx.objectStore(AUDIO_STORE_NAME);
             const map = new Map<string, string>();
+            
             const cursorReq = store.openCursor();
             cursorReq.onsuccess = (e) => {
                 const cursor = (e.target as IDBRequest).result;
@@ -90,24 +90,35 @@ export interface AppSettings {
     loopAudio: boolean;
     autoPlayDelay: number;
     autoPlayExample: boolean;
+    // GitHub Settings
+    githubUrl: string;
+    githubToken: string;
 }
 
 export const saveSettings = (settings: Partial<AppSettings>) => localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...loadSettings(), ...settings }));
 export const loadSettings = (): AppSettings => {
-    try { return { fontSize: 'normal', playbackSpeed: 1.0, swipeAutoplay: true, loopAudio: false, autoPlayDelay: 2000, autoPlayExample: true, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } 
-    catch (e) { return { fontSize: 'normal', playbackSpeed: 1.0, swipeAutoplay: true, loopAudio: false, autoPlayDelay: 2000, autoPlayExample: true }; }
+    const defaults: AppSettings = { 
+        fontSize: 'normal', 
+        playbackSpeed: 1.0, 
+        swipeAutoplay: true, 
+        loopAudio: false, 
+        autoPlayDelay: 2000, 
+        autoPlayExample: true,
+        githubUrl: '',
+        githubToken: ''
+    };
+    try { 
+        return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; 
+    } catch (e) { return defaults; }
 };
 
 // --- DATA STRUCTURES ---
-
-// Cấu trúc file backup toàn hệ thống
 export interface FullSystemBackup {
     version: number;
     type: 'GLOBAL_BACKUP';
     timestamp: number;
     settings: AppSettings;
     audioCache: Record<string, string>;
-    // Dữ liệu được chia rõ ràng theo từng key ngôn ngữ
     data: {
         [key in Language]?: {
             vocab: VocabularyWord[];
@@ -116,8 +127,86 @@ export interface FullSystemBackup {
     };
 }
 
-// --- CORE DATA FUNCTIONS ---
+// --- GITHUB SYNC FUNCTIONS ---
 
+// Helper: Safe Base64 Encode (Unicode support for VN/CN/ES characters)
+const utf8_to_b64 = (str: string) => {
+  return window.btoa(unescape(encodeURIComponent(str)));
+}
+
+// 1. Load from GitHub (Using Raw URL)
+export const loadFromGitHub = async (rawUrl: string): Promise<string> => {
+    // Add timestamp to prevent caching from GitHub Raw
+    const cacheBuster = `?t=${Date.now()}`;
+    const response = await fetch(rawUrl + cacheBuster);
+    
+    if (!response.ok) {
+        throw new Error(`GitHub Load Failed: ${response.status}`);
+    }
+    return await response.text();
+};
+
+// 2. Save to GitHub (Using API)
+export const saveToGitHub = async (rawUrl: string, token: string, content: string): Promise<void> => {
+    // Parse info from raw URL: https://raw.githubusercontent.com/USER/REPO/BRANCH/PATH
+    const regex = /raw\.githubusercontent\.com\/([^\/]+)\/([^\/]+)\/([^\/]+)\/(.+)/;
+    const match = rawUrl.match(regex);
+    
+    if (!match) {
+        throw new Error("Invalid GitHub Raw URL format. Must be raw.githubusercontent.com/USER/REPO/BRANCH/PATH");
+    }
+    
+    const owner = match[1];
+    const repo = match[2];
+    const branch = match[3];
+    const path = match[4];
+    
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+    // 1. GET current file SHA (needed for update)
+    let sha = "";
+    try {
+        const getRes = await fetch(apiUrl + `?ref=${branch}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/vnd.github.v3+json'
+            }
+        });
+        if (getRes.ok) {
+            const data = await getRes.json();
+            sha = data.sha;
+        } else if (getRes.status !== 404) {
+             throw new Error("Failed to check file existence on GitHub.");
+        }
+    } catch (e) {
+        console.warn("File likely doesn't exist yet, creating new.");
+    }
+
+    // 2. PUT (Create/Update)
+    const body = {
+        message: `Update via Duolingo AI (${new Date().toLocaleString()})`,
+        content: utf8_to_b64(content), // Base64 encode content
+        branch: branch,
+        ...(sha ? { sha } : {}) // Include SHA if updating
+    };
+
+    const putRes = await fetch(apiUrl, {
+        method: 'PUT',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+    });
+
+    if (!putRes.ok) {
+        const err = await putRes.json();
+        throw new Error(`GitHub Save Failed: ${err.message}`);
+    }
+};
+
+// --- CORE DATA FUNCTIONS ---
 const fixWordData = (w: any, index: number): VocabularyWord => {
     const id = w.id || `repaired_id_${Date.now()}_${index}`;
     let target = w.target || w.french || w.english || w.text || 'Unknown Word';
@@ -125,57 +214,24 @@ const fixWordData = (w: any, index: number): VocabularyWord => {
     let example = w.example || {};
     let exTarget = example.target || example.french || example.english || example.text || target;
     let exViet = example.vietnamese || vietnamese;
-    
-    return {
-        id: id,
-        target: target,
-        vietnamese: vietnamese,
-        ipa: w.ipa || '',
-        viet_pronunciation: w.viet_pronunciation || '',
-        example: {
-            target: exTarget,
-            vietnamese: exViet,
-            viet_pronunciation: example.viet_pronunciation || ''
-        },
-        learnedAt: w.learnedAt || Date.now(),
-        mastered: !!w.mastered,
-        isFavorite: !!w.isFavorite,
-        category: w.category || 'general'
-    };
+    return { id, target, vietnamese, ipa: w.ipa || '', viet_pronunciation: w.viet_pronunciation || '', example: { target: exTarget, vietnamese: exViet, viet_pronunciation: example.viet_pronunciation || '' }, learnedAt: w.learnedAt || Date.now(), mastered: !!w.mastered, isFavorite: !!w.isFavorite, category: w.category || 'general' };
 };
 
-export const saveVocabularyData = (words: VocabularyWord[], lang: Language): void => {
-    try { localStorage.setItem(getStorageKey(lang), JSON.stringify(words)); } catch (e) { console.error(e); }
-};
-
+export const saveVocabularyData = (words: VocabularyWord[], lang: Language): void => { try { localStorage.setItem(getStorageKey(lang), JSON.stringify(words)); } catch (e) { console.error(e); } };
 export const loadVocabularyData = (lang: Language): VocabularyWord[] => {
     try {
         const key = getStorageKey(lang);
         let jsonString = localStorage.getItem(key);
-        // Migration logic for old French key
-        if ((!jsonString || jsonString === '[]') && lang === 'fr') {
-            const oldData = localStorage.getItem('french_vocab_a1_data_json');
-            if (oldData && oldData !== '[]') jsonString = oldData;
-        }
-
+        if ((!jsonString || jsonString === '[]') && lang === 'fr') { const old = localStorage.getItem('french_vocab_a1_data_json'); if (old && old !== '[]') jsonString = old; }
         if (!jsonString) return [];
         let parsed: any[] = JSON.parse(jsonString);
         if (!Array.isArray(parsed)) return [];
-        
-        // Auto-repair on load
-        return parsed.map((w, i) => fixWordData(w, i));
-    } catch (error) {
-        console.error("Failed load", error);
-        return [];
-    }
+        const repaired = parsed.map((w, i) => fixWordData(w, i));
+        if (repaired.some((w, i) => !parsed[i].id || !parsed[i].target)) saveVocabularyData(repaired, lang);
+        return repaired;
+    } catch (error) { console.error("Failed load", error); return []; }
 };
-
-export const resetToDefaults = (lang: Language): VocabularyWord[] => {
-    saveVocabularyData([], lang);
-    return [];
-}
-
-// Hàm này dùng khi GENERATE từ mới (chỉ thêm từ chưa có)
+export const resetToDefaults = (lang: Language): VocabularyWord[] => { saveVocabularyData([], lang); return []; }
 export const appendVocabulary = (newWords: VocabularyWord[], lang: Language): VocabularyWord[] => {
     const current = loadVocabularyData(lang);
     const distinct = newWords.filter(nw => !current.some(ex => ex.target.toLowerCase() === nw.target.toLowerCase()));
@@ -183,190 +239,71 @@ export const appendVocabulary = (newWords: VocabularyWord[], lang: Language): Vo
     saveVocabularyData(updated, lang);
     return updated;
 };
-
-// Hàm này dùng khi RESTORE (Cập nhật từ cũ + Thêm từ mới)
 export const mergeVocabularyData = (incomingWords: VocabularyWord[], lang: Language): void => {
     const current = loadVocabularyData(lang);
-    
-    // Map để tra cứu nhanh theo ID và Target (Text)
     const idMap = new Map(current.map(w => [w.id, w]));
     const targetMap = new Map(current.map(w => [w.target.toLowerCase().trim(), w]));
-
     incomingWords.forEach(incoming => {
-        // 1. Nếu trùng ID -> Cập nhật (Restore đè lên)
-        if (idMap.has(incoming.id)) {
-            const existing = idMap.get(incoming.id)!;
-            Object.assign(existing, incoming); // Ghi đè thông tin từ backup
-        } 
-        // 2. Nếu không trùng ID nhưng trùng Text -> Cập nhật nội dung (giữ ID cũ hoặc mới tùy ý, ở đây ta update content)
-        else if (targetMap.has(incoming.target.toLowerCase().trim())) {
-            const existing = targetMap.get(incoming.target.toLowerCase().trim())!;
-            // Merge các trường quan trọng, giữ lại trạng thái mastered/favorite nếu muốn, 
-            // nhưng Restore thường ưu tiên file backup. Ta sẽ ghi đè tất cả.
-            Object.assign(existing, incoming, { id: existing.id }); // Giữ ID cũ để tránh lỗi React key
-        }
-        // 3. Nếu mới hoàn toàn -> Thêm vào danh sách
-        else {
-            current.push(incoming);
-        }
+        if (idMap.has(incoming.id)) Object.assign(idMap.get(incoming.id)!, incoming);
+        else if (targetMap.has(incoming.target.toLowerCase().trim())) Object.assign(targetMap.get(incoming.target.toLowerCase().trim())!, incoming, { id: targetMap.get(incoming.target.toLowerCase().trim())!.id });
+        else current.push(incoming);
     });
-
     saveVocabularyData(current, lang);
 };
-
 export const updateWordStatus = (id: string, updates: Partial<VocabularyWord>, lang: Language): VocabularyWord[] => {
     const current = loadVocabularyData(lang);
     const idx = current.findIndex(w => w.id === id);
     if (idx !== -1) { current[idx] = { ...current[idx], ...updates }; saveVocabularyData(current, lang); }
     return current;
 };
-
 export const editVocabularyWord = (id: string, word: VocabularyWord, lang: Language): VocabularyWord[] => {
     const current = loadVocabularyData(lang);
     const idx = current.findIndex(w => w.id === id);
     if (idx !== -1) { current[idx] = { ...current[idx], ...word, id }; saveVocabularyData(current, lang); }
     return current;
 };
-
 export const removeVocabularyWord = (id: string, lang: Language): VocabularyWord[] => {
     const current = loadVocabularyData(lang);
     const updated = current.filter(w => w.id !== id);
     saveVocabularyData(updated, lang);
     return updated;
 }
-
-// --- NEWS HANDLING ---
-export const loadNewsData = (lang: Language): NewsArticle[] => {
-    try { return JSON.parse(localStorage.getItem(getNewsStorageKey(lang)) || '[]'); } catch (e) { return []; }
-};
+export const loadNewsData = (lang: Language): NewsArticle[] => { try { return JSON.parse(localStorage.getItem(getNewsStorageKey(lang)) || '[]'); } catch (e) { return []; } };
 export const saveNewsData = (articles: NewsArticle[], lang: Language) => localStorage.setItem(getNewsStorageKey(lang), JSON.stringify(articles));
+export const appendNewsData = (newArticles: NewsArticle[], lang: Language) => { const current = loadNewsData(lang); const distinct = newArticles.filter(na => !current.some(ex => ex.title === na.title)); const updated = [...distinct, ...current]; saveNewsData(updated, lang); return updated; };
+export const mergeNewsData = (incoming: NewsArticle[], lang: Language) => { const current = loadNewsData(lang); const map = new Map(current.map(n => [n.id, n])); incoming.forEach(inc => { if (map.has(inc.id)) Object.assign(map.get(inc.id)!, inc); else current.unshift(inc); }); saveNewsData(current, lang); };
+export const deleteNewsArticle = (id: string, lang: Language) => { const updated = loadNewsData(lang).filter(a => a.id !== id); saveNewsData(updated, lang); return updated; };
 
-export const appendNewsData = (newArticles: NewsArticle[], lang: Language) => {
-    const current = loadNewsData(lang);
-    // Filter duplicates by Title
-    const distinct = newArticles.filter(na => !current.some(ex => ex.title === na.title));
-    const updated = [...distinct, ...current];
-    saveNewsData(updated, lang);
-    return updated;
-};
-
-// Hàm merge cho News khi Restore
-export const mergeNewsData = (incoming: NewsArticle[], lang: Language) => {
-    const current = loadNewsData(lang);
-    const map = new Map(current.map(n => [n.id, n]));
-    
-    incoming.forEach(inc => {
-        if (map.has(inc.id)) {
-            Object.assign(map.get(inc.id)!, inc);
-        } else {
-            current.unshift(inc);
-        }
-    });
-    saveNewsData(current, lang);
-};
-
-export const deleteNewsArticle = (id: string, lang: Language) => {
-    const updated = loadNewsData(lang).filter(a => a.id !== id);
-    saveNewsData(updated, lang);
-    return updated;
-};
-
-
-// --- GLOBAL EXPORT / IMPORT LOGIC (STRICT) ---
-
-// 1. Xuất toàn bộ: Quét qua danh sách SUPPORTED_LANGUAGES để lấy đúng dữ liệu
-export const exportFullSystemBackup = async (): Promise<string> => {
+export const exportFullSystemBackup = async (includeAudio: boolean = true): Promise<string> => {
     let audioCacheMap = new Map<string, string>();
     try { audioCacheMap = await loadAllAudioFromDB(); } catch(e) {}
-    
-    // Container chứa dữ liệu phân theo ngôn ngữ
     const allData: FullSystemBackup['data'] = {};
-    
-    // QUAN TRỌNG: Chỉ lấy đúng key của ngôn ngữ được hỗ trợ
-    SUPPORTED_LANGUAGES.forEach(lang => {
-        allData[lang] = {
-            vocab: loadVocabularyData(lang),
-            news: loadNewsData(lang)
-        };
-    });
-
-    const backup: FullSystemBackup = {
-        version: 3,
-        type: 'GLOBAL_BACKUP',
-        timestamp: Date.now(),
-        settings: loadSettings(),
-        audioCache: Object.fromEntries(audioCacheMap),
-        data: allData
-    };
-
-    return JSON.stringify(backup);
+    SUPPORTED_LANGUAGES.forEach(lang => { allData[lang] = { vocab: loadVocabularyData(lang), news: loadNewsData(lang) }; });
+    const backup: FullSystemBackup = { version: 3, type: 'GLOBAL_BACKUP', timestamp: Date.now(), settings: loadSettings(), audioCache: Object.fromEntries(audioCacheMap), data: allData };
+    return JSON.stringify(backup, null, 2);
 };
-
-// 2. Nhập toàn bộ: Đọc file và phân phối về đúng ngôn ngữ
 export const importFullSystemBackup = async (json: string, legacyLangHint?: Language): Promise<{ success: boolean, audioCache?: Map<string, string>, message?: string }> => {
     try {
         const parsed = JSON.parse(json);
-        
-        // Kiểm tra format mới (Global Backup)
         if (parsed.type === 'GLOBAL_BACKUP' || (parsed.version >= 3 && parsed.data)) {
-            
-            // 1. Khôi phục Settings
             if (parsed.settings) saveSettings(parsed.settings);
-            
-            // 2. Khôi phục Dữ liệu Ngôn ngữ (STRICT LOOP)
-            // Ta chỉ duyệt qua các ngôn ngữ mà App hỗ trợ để đảm bảo an toàn
             let restoredLangs: string[] = [];
-            
             SUPPORTED_LANGUAGES.forEach(lang => {
-                // Kiểm tra xem trong file backup có dữ liệu cho ngôn ngữ này không
                 if (parsed.data && parsed.data[lang]) {
                     const langData = parsed.data[lang];
-                    
-                    // Xử lý Vocab
-                    if (langData.vocab && Array.isArray(langData.vocab)) {
-                        const fixedVocab = langData.vocab.map((w: any, i: number) => fixWordData(w, i));
-                        mergeVocabularyData(fixedVocab, lang); // Dùng hàm MERGE để cập nhật đúng kho
-                    }
-
-                    // Xử lý News
-                    if (langData.news && Array.isArray(langData.news)) {
-                        mergeNewsData(langData.news, lang);
-                    }
-                    
+                    if (langData.vocab) { const fixed = langData.vocab.map((w: any, i: number) => fixWordData(w, i)); mergeVocabularyData(fixed, lang); }
+                    if (langData.news) mergeNewsData(langData.news, lang);
                     restoredLangs.push(lang.toUpperCase());
                 }
             });
-
-            // 3. Khôi phục Audio Cache
             let cache = undefined;
-            if (parsed.audioCache) {
-                 cache = new Map(Object.entries(parsed.audioCache));
-                 saveBatchAudioToDB(Object.entries(parsed.audioCache) as [string,string][]);
+            if (parsed.audioCache && Object.keys(parsed.audioCache).length > 0) { 
+                cache = new Map(Object.entries(parsed.audioCache)); 
+                saveBatchAudioToDB(Object.entries(parsed.audioCache) as [string,string][]); 
             }
-            
-            if (restoredLangs.length === 0) {
-                return { success: true, message: "Backup valid but no language data found to restore." };
-            }
-            
-            return { 
-                success: true, 
-                audioCache: cache as Map<string, string>, 
-                message: `Restored: ${restoredLangs.join(', ')}` 
-            };
+            return { success: true, audioCache: cache as Map<string, string>, message: `Restored: ${restoredLangs.join(', ')}` };
         } 
-        
-        // HỖ TRỢ FILE CŨ (LEGACY - Mảng đơn)
-        // Nếu file là 1 mảng và ta có 'legacyLangHint' (ngôn ngữ đang chọn), ta sẽ import vào ngôn ngữ đó.
-        if (Array.isArray(parsed) && legacyLangHint) {
-             const fixedVocab = parsed.map((w: any, i: number) => fixWordData(w, i));
-             mergeVocabularyData(fixedVocab, legacyLangHint);
-             return { success: true, message: `Restored legacy data into ${legacyLangHint.toUpperCase()}` };
-        }
-        
-        return { success: false, message: "Invalid backup file. Legacy files need a selected language context." };
-
-    } catch (e) { 
-        console.error(e);
-        return { success: false, message: "Invalid or Corrupted JSON file" }; 
-    }
+        if (Array.isArray(parsed) && legacyLangHint) { const fixed = parsed.map((w: any, i: number) => fixWordData(w, i)); mergeVocabularyData(fixed, legacyLangHint); return { success: true, message: `Restored legacy data into ${legacyLangHint.toUpperCase()}` }; }
+        return { success: false, message: "Invalid file format." };
+    } catch (e) { console.error(e); return { success: false, message: "Invalid JSON file" }; }
 };
