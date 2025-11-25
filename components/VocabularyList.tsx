@@ -157,11 +157,19 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
   // --- GLOBAL KEYBOARD SHORTCUTS ---
   useEffect(() => {
       const handleGlobalKeyDown = (e: KeyboardEvent) => {
+          // Fix: Handle Modal Escape separately
+          if (isModalOpen) {
+              if (e.key === 'Escape') setIsModalOpen(false);
+              return;
+          }
+          
           if (selectedWordId) return; 
+          
           if (e.key === 'Escape') {
               if (viewMode !== 'LIST') setViewMode('LIST');
               else onBack();
           }
+          
           if (!isGameOver && !selectedAnswer && (viewMode === 'GAME_QUIZ' || viewMode === 'GAME_FILL' || viewMode === 'GAME_AUDIO') && gameQuestions.length > 0) {
               if (['1', '2', '3', '4'].includes(e.key)) {
                   const idx = parseInt(e.key) - 1;
@@ -172,7 +180,7 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
       };
       window.addEventListener('keydown', handleGlobalKeyDown);
       return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [selectedWordId, viewMode, isGameOver, gameQuestions, questionIndex, onBack, selectedAnswer]);
+  }, [selectedWordId, viewMode, isGameOver, gameQuestions, questionIndex, onBack, selectedAnswer, isModalOpen]);
 
   // --- AUTO PLAY ---
   const startAutoPlay = () => {
@@ -529,6 +537,14 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
 
   const handleSaveWord = () => {
       if (!newTarget.trim()) { alert("Missing word"); return; }
+      
+      // Check duplicate
+      const duplicate = words.find(w => w.target.toLowerCase() === newTarget.trim().toLowerCase());
+      if (duplicate && (!isEditing || duplicate.id !== editingId)) {
+          alert(`Word "${duplicate.target}" already exists!`);
+          return;
+      }
+
       const wordData: VocabularyWord = {
           id: isEditing && editingId ? editingId : Date.now().toString(36) + Math.random(),
           target: newTarget.trim(),
@@ -544,7 +560,16 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
           mastered: false,
           isFavorite: false
       };
-      if (isEditing) onEditWord(wordData); else onAddWord(wordData);
+      if (isEditing) {
+          onEditWord(wordData);
+      } else {
+          onAddWord(wordData);
+          // CRITICAL FIX: Reset filters to ALL and Sort to NEWEST when adding a word
+          // This ensures the user sees the word they just added, even if they were in "Favorites" or "Verbs"
+          setFilterType('ALL');
+          setSortType('DATE_DESC');
+          setSearchTerm('');
+      }
       setIsModalOpen(false);
   };
   
@@ -645,11 +670,176 @@ export const VocabularyList: React.FC<VocabularyListProps> = ({
                 )}
             </>
         )}
-        {/* Game rendering unchanged */}
-        {viewMode !== 'LIST' && !isGameOver && <div className="text-center text-slate-400 mt-10">Game mode active...</div>}
+        {viewMode !== 'LIST' && !isGameOver && (
+             <div className="flex flex-col items-center justify-center mt-10 space-y-4 text-center">
+                 {/* ... Game Logic Rendered Here ... */}
+                 {viewMode === 'GAME_QUIZ' && gameQuestions.length > 0 && (
+                     <div className="w-full">
+                         <h3 className="text-xl font-bold mb-4">{gameQuestions[questionIndex].target.vietnamese}</h3>
+                         <div className="grid grid-cols-2 gap-4">
+                             {gameQuestions[questionIndex].options.map((opt: VocabularyWord) => (
+                                 <button key={opt.id} onClick={() => handleAnswer(opt.id)} className={`p-4 rounded-xl font-bold border-b-4 active:border-b-0 active:mt-1 ${selectedAnswer === opt.id ? (isCorrect ? 'bg-green-500 text-white border-green-600' : 'bg-rose-500 text-white border-rose-600') : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}>{opt.target}</button>
+                             ))}
+                         </div>
+                     </div>
+                 )}
+                  {viewMode === 'GAME_AUDIO' && gameQuestions.length > 0 && (
+                     <div className="w-full">
+                         <div className="mb-6"><button onClick={() => speakBestAvailable(gameQuestions[questionIndex].target.target)} className="p-6 bg-indigo-500 text-white rounded-full shadow-lg active:scale-95"><Volume2 className="w-8 h-8" /></button></div>
+                         <div className="grid grid-cols-2 gap-4">
+                             {gameQuestions[questionIndex].options.map((opt: VocabularyWord) => (
+                                 <button key={opt.id} onClick={() => handleAnswer(opt.id)} className={`p-4 rounded-xl font-bold border-b-4 active:border-b-0 active:mt-1 ${selectedAnswer === opt.id ? (isCorrect ? 'bg-green-500 text-white border-green-600' : 'bg-rose-500 text-white border-rose-600') : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}>{opt.vietnamese}</button>
+                             ))}
+                         </div>
+                     </div>
+                 )}
+                 {viewMode === 'GAME_MATCH' && (
+                     <div className="grid grid-cols-2 gap-3 w-full">
+                         {gameQuestions.map((card, idx) => (
+                             <button 
+                                key={`${card.id}-${card.type}-${idx}`} 
+                                onClick={() => handleCardFlip(card, idx)}
+                                disabled={matchedPairs.includes(card.id)}
+                                className={`h-24 p-2 rounded-xl font-bold text-sm border-2 transition-all ${matchedPairs.includes(card.id) ? 'opacity-0' : flippedCards.some(f => f.index === idx) ? 'bg-sky-500 text-white border-sky-600' : 'bg-white text-slate-700 border-slate-200'}`}
+                             >
+                                 {flippedCards.some(f => f.index === idx) || matchedPairs.includes(card.id) ? card.content : '?'}
+                             </button>
+                         ))}
+                     </div>
+                 )}
+                 {viewMode === 'GAME_SCRAMBLE' && gameQuestions.length > 0 && (
+                     <div className="w-full">
+                          <p className="text-lg font-bold mb-4">{gameQuestions[questionIndex].target.vietnamese}</p>
+                          <div className="flex justify-center gap-2 mb-8 min-h-[50px] flex-wrap">
+                              {userSpelling.map((l, i) => (
+                                  <span key={i} className="w-10 h-10 flex items-center justify-center bg-slate-700 text-white rounded-lg font-bold text-xl">{l.char}</span>
+                              ))}
+                              {userSpelling.length === 0 && <span className="text-slate-300 italic">Tap letters below</span>}
+                          </div>
+                          <div className="flex justify-center gap-2 flex-wrap">
+                              {scrambledLetters.map((l) => (
+                                  <button key={l.id} onClick={() => handleScrambleTap(l)} className="w-12 h-12 bg-white border-b-4 border-slate-200 rounded-xl font-bold text-xl text-sky-600 active:border-b-0 active:translate-y-1">{l.char}</button>
+                              ))}
+                          </div>
+                          <button onClick={resetScramble} className="mt-8 text-xs font-bold text-slate-400 uppercase tracking-widest hover:text-slate-600">Reset</button>
+                     </div>
+                 )}
+             </div>
+        )}
+        {isGameOver && (
+             <div className="flex flex-col items-center justify-center py-10 animate-in zoom-in duration-300">
+                 <div className="w-24 h-24 bg-yellow-400 rounded-full flex items-center justify-center mb-4 border-4 border-yellow-500 shadow-xl"><Sparkles className="w-12 h-12 text-yellow-100" /></div>
+                 <h2 className="text-3xl font-black text-slate-700 mb-2">{t.excellent}</h2>
+                 <p className="text-slate-400 font-bold mb-6 text-lg">{t.score}: {score}</p>
+                 <button onClick={() => startGame(viewMode)} className="px-8 py-3 bg-indigo-500 text-white rounded-2xl font-bold text-lg shadow-lg hover:bg-indigo-400 border-b-4 border-indigo-600 active:border-b-0 active:mt-1">{t.playAgain}</button>
+                 <button onClick={() => setViewMode('LIST')} className="mt-4 text-slate-400 font-bold hover:text-slate-600">Back to List</button>
+             </div>
+        )}
       </div>
 
-      {/* Modal logic unchanged */}
+       {/* ADD/EDIT WORD MODAL - RESTORED WITH HIGH Z-INDEX */}
+       {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border-2 border-slate-200 max-h-[90vh] overflow-y-auto custom-scrollbar">
+                {/* Header */}
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-black text-slate-700">{isEditing ? 'Edit Word' : t.addWord}</h3>
+                    <button onClick={() => setIsModalOpen(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X className="w-5 h-5 text-slate-500" /></button>
+                </div>
+
+                {/* Content */}
+                <div className="space-y-4">
+                    {/* Target Word */}
+                    <div>
+                         <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Word ({currentLang.toUpperCase()})</label>
+                         <div className="flex gap-2">
+                             <input 
+                                className="flex-1 bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-700 focus:border-indigo-500 outline-none"
+                                value={newTarget}
+                                onChange={(e) => setNewTarget(e.target.value)}
+                                placeholder="e.g. Bonjour"
+                             />
+                             <button 
+                                onClick={handleAutoFill} 
+                                disabled={isGenerating || !newTarget.trim()}
+                                className="p-3 bg-indigo-100 text-indigo-600 rounded-xl border-2 border-indigo-200 hover:bg-indigo-200 disabled:opacity-50"
+                                title="Auto Fill with AI"
+                             >
+                                {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                             </button>
+                         </div>
+                    </div>
+
+                    {/* Vietnamese */}
+                    <div>
+                         <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Meaning (Vietnamese)</label>
+                         <input 
+                            className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-3 font-medium text-slate-700 focus:border-indigo-500 outline-none"
+                            value={newVietnamese}
+                            onChange={(e) => setNewVietnamese(e.target.value)}
+                            placeholder="e.g. Xin chào"
+                         />
+                    </div>
+
+                    {/* Pronunciation Group */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                             <label className="block text-xs font-bold text-slate-400 uppercase mb-1">IPA (Opt)</label>
+                             <input 
+                                className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 font-mono text-sm text-slate-600 focus:border-indigo-500 outline-none"
+                                value={newIpa}
+                                onChange={(e) => setNewIpa(e.target.value)}
+                                placeholder="/.../"
+                             />
+                        </div>
+                        <div>
+                             <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Viet Pronun (Opt)</label>
+                             <input 
+                                className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-600 focus:border-indigo-500 outline-none"
+                                value={newVietPronun}
+                                onChange={(e) => setNewVietPronun(e.target.value)}
+                                placeholder="Bông-giua"
+                             />
+                        </div>
+                    </div>
+
+                    <div className="h-px bg-slate-100 my-2"></div>
+
+                    {/* Example Section */}
+                    <div>
+                         <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Example Sentence</label>
+                         <textarea 
+                            className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-3 font-medium text-slate-700 focus:border-indigo-500 outline-none resize-none"
+                            rows={2}
+                            value={newExTarget}
+                            onChange={(e) => setNewExTarget(e.target.value)}
+                            placeholder="Sentence in target language..."
+                         />
+                    </div>
+                    
+                    <div>
+                         <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Example Meaning</label>
+                         <input 
+                            className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-3 font-medium text-slate-700 focus:border-indigo-500 outline-none"
+                            value={newExViet}
+                            onChange={(e) => setNewExViet(e.target.value)}
+                            placeholder="Sentence meaning..."
+                         />
+                    </div>
+
+                    {/* Save Button */}
+                    <button 
+                        onClick={handleSaveWord}
+                        className="w-full py-3 bg-green-500 hover:bg-green-400 text-white rounded-xl font-extrabold uppercase tracking-wide border-b-4 border-green-600 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center gap-2"
+                    >
+                        <Save className="w-5 h-5" />
+                        {t.save}
+                    </button>
+                </div>
+            </div>
+        </div>
+       )}
+
       {selectedWord && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={() => { if(isAutoPlaying) stopAutoPlay(); setSelectedWordId(null); }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} tabIndex={0}>
             {isAutoPlaying && (

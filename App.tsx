@@ -135,8 +135,8 @@ export default function App() {
       reader.onload = async (ev) => {
           try {
               const content = ev.target?.result as string;
-              // Now we don't need a fallback lang for Global Backup
-              const result = await importFullSystemBackup(content);
+              // SUPPORT LEGACY: Pass selectedLang as a fallback hint if the file is just an array
+              const result = await importFullSystemBackup(content, selectedLang || undefined);
               
               if (result.success) {
                   // If we are currently in a language view, refresh it to show new data immediately

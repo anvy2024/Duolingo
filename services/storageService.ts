@@ -303,7 +303,7 @@ export const exportFullSystemBackup = async (): Promise<string> => {
 };
 
 // 2. Nhập toàn bộ: Đọc file và phân phối về đúng ngôn ngữ
-export const importFullSystemBackup = async (json: string): Promise<{ success: boolean, audioCache?: Map<string, string>, message?: string }> => {
+export const importFullSystemBackup = async (json: string, legacyLangHint?: Language): Promise<{ success: boolean, audioCache?: Map<string, string>, message?: string }> => {
     try {
         const parsed = JSON.parse(json);
         
@@ -355,10 +355,15 @@ export const importFullSystemBackup = async (json: string): Promise<{ success: b
             };
         } 
         
-        // Hỗ trợ file cũ (Legacy) - Nếu file không có cấu trúc global, báo lỗi hoặc yêu cầu dùng file mới
-        // Tuy nhiên, để thân thiện, ta có thể thử import vào 'fr' mặc định nếu người dùng muốn, 
-        // nhưng tốt nhất là return false để bắt buộc dùng chuẩn mới cho an toàn.
-        return { success: false, message: "Old backup file format. Please use a new Global Backup." };
+        // HỖ TRỢ FILE CŨ (LEGACY - Mảng đơn)
+        // Nếu file là 1 mảng và ta có 'legacyLangHint' (ngôn ngữ đang chọn), ta sẽ import vào ngôn ngữ đó.
+        if (Array.isArray(parsed) && legacyLangHint) {
+             const fixedVocab = parsed.map((w: any, i: number) => fixWordData(w, i));
+             mergeVocabularyData(fixedVocab, legacyLangHint);
+             return { success: true, message: `Restored legacy data into ${legacyLangHint.toUpperCase()}` };
+        }
+        
+        return { success: false, message: "Invalid backup file. Legacy files need a selected language context." };
 
     } catch (e) { 
         console.error(e);
